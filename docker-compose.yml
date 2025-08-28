@@ -1,0 +1,44 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - /opt/rag/ollama:/root/.ollama
+    restart: unless-stopped
+
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: chroma
+    volumes:
+      - /opt/rag/chroma:/chroma
+    environment:
+      - CHROMA_DB_IMPL=duckdb+parquet
+    restart: unless-stopped
+
+  api:
+    build: ./api
+    container_name: rag-api
+    env_file: .env
+    depends_on:
+      - ollama
+      - chroma
+    volumes:
+      - /opt/rag/data:/app/data
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: openwebui
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - RAG_API_URL=http://api:8000
+    depends_on:
+      - api
+    ports:
+      - "3000:8080"
+    restart: unless-stopped
+
