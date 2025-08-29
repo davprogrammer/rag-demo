@@ -96,8 +96,8 @@ def chat(system: str | None, user: str) -> str:
         "options": {"temperature": config.TEMPERATURE, "num_predict": config.MAX_TOKENS},
         "messages": [
             {"role": "system", "content": system or (
-                "Du bist ein Unternehmens-FAQ-Assistent. Antworte nur anhand des Kontextes. "
-                "Wenn Information fehlt, sage 'Ich weiß es nicht'. Nenne am Ende die Quellen."
+                "Du bist ein Unternehmens-FAQ-Assistent. Antworte nur anhand des Kontextes, "
+                "sage 'Ich weiß es nicht'. Nenne am Ende die Quellen."
             )},
             {"role": "user", "content": user},
         ],

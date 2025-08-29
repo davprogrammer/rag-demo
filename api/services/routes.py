@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from .chroma_client import get_collection
 from pydantic import BaseModel
 from .ingest import ingest
 from .retrieval import retrieve, build_prompt
@@ -13,6 +14,16 @@ class QueryIn(BaseModel):
 @router.get("/health")
 def health():
     return {"ok": True}
+
+@router.get("/stats")
+def stats():
+    """Schritt 7: Einfache Statistik über Collection (Dokument & Embedding Count)."""
+    try:
+        coll = get_collection()
+        count = coll.count()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    return {"ok": True, "collection": coll.name, "count": count}
 
 @router.post("/ingest/run")
 def run_ingest():

@@ -14,8 +14,9 @@ def retrieve(query: str, k: int | None = None):
     )
 
 def build_prompt(query: str, results) -> str:
-    docs = results.get("documents", [[]])[0]
-    metas = results.get("metadatas", [[]])[0]
+    # Schritt 2: Prompt kürzen – nur die Top 4 Snippets nutzen, um LLM-Timeout zu vermeiden
+    docs = results.get("documents", [[]])[0][:4]
+    metas = results.get("metadatas", [[]])[0][:4]
     parts = []
     for d, m in zip(docs, metas):
         src = m.get("source", "?")
