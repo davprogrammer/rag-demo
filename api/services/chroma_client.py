@@ -12,23 +12,26 @@ def _probe_server(base_url: str) -> str:
 
 def get_client():
     """
-    Erstelle einen HttpClient OHNE tenant/database für Single‑Tenant-Betrieb.
-    Das vermeidet die v1-tenant-Validierung und ist langfristig sinnvoll,
-    wenn du keine Multi‑Tenant-Funktionalität benötigst.
+    Erstelle einen HttpClient KORREKT mit Host/Port getrennt für bessere Performance.
     """
-    base_url = f"http://{config.CHROMA_HOST}:{config.CHROMA_PORT}"
     try:
-        # kein tenant/database übergeben -> einfache Single‑Tenant-Nutzung
-        return chromadb.HttpClient(host=base_url)
+        # Korrekte Chroma-Client-Initialisierung mit getrennten Host/Port
+        return chromadb.HttpClient(
+            host=config.CHROMA_HOST,
+            port=config.CHROMA_PORT,
+            ssl=False,
+            headers={"Connection": "keep-alive"}
+        )
     except Exception as e:
         chroma_ver = getattr(chromadb, "__version__", "<unknown>")
+        base_url = f"http://{config.CHROMA_HOST}:{config.CHROMA_PORT}"
         server_probe = _probe_server(base_url)
         raise RuntimeError(
-            "Fehler beim Verbinden zum Chroma-Server (Single‑Tenant-Modus).\n"
+            "Fehler beim Verbinden zum Chroma-Server.\n"
             f"chromadb-Paket: {chroma_ver}\n"
             f"Server-Probe: {server_probe}\n"
             f"Originalfehler: {e}\n\n"
-            "Wenn du Multi‑Tenant brauchst, lege den Tenant über die Chroma v2 API an oder gleiche Client/Server-Versionen ab."
+            "Prüfe Chroma-Server-Verfügbarkeit und Netzwerk-Verbindung."
         ) from e
 
 def get_collection():

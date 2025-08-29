@@ -3,8 +3,31 @@ from typing import Any, List
 from . import config
 import time
 import logging
+import os
 
 logger = logging.getLogger(__name__)
+
+# Globale Session für Connection-Pooling und Keep-Alive
+_ollama_session = None
+
+def _get_session() -> requests.Session:
+    """Holt eine wiederverwendbare Session mit Connection-Pooling."""
+    global _ollama_session
+    if _ollama_session is None:
+        _ollama_session = requests.Session()
+        _ollama_session.headers.update({
+            'Content-Type': 'application/json',
+            'Connection': 'keep-alive'
+        })
+        # Connection-Pool-Optimierungen
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=2,
+            pool_maxsize=10,
+            max_retries=0
+        )
+        _ollama_session.mount('http://', adapter)
+        _ollama_session.mount('https://', adapter)
+    return _ollama_session
 
 def _extract_embedding(j: Any) -> List[float] | None:
     """Versucht verschiedene mögliche Ollama-Embedding-Response-Layouts zu interpretieren."""
@@ -29,7 +52,8 @@ def _extract_embedding(j: Any) -> List[float] | None:
 
 def _model_present(model: str) -> bool:
     try:
-        r = requests.get(f"{config.OLLAMA_URL}/api/tags", timeout=10)
+        session = _get_session()
+        r = session.get(f"{config.OLLAMA_URL}/api/tags", timeout=10)
         if r.status_code != 200:
             return False
         js = r.json()
@@ -44,7 +68,8 @@ def _model_present(model: str) -> bool:
 def _pull_model(model: str) -> None:
     # Trigger Model Pull (non-streaming best-effort)
     try:
-        requests.post(f"{config.OLLAMA_URL}/api/pull", json={"model": model}, timeout=300)
+        session = _get_session()
+        session.post(f"{config.OLLAMA_URL}/api/pull", json={"model": model}, timeout=300)
     except Exception:
         pass
 
@@ -54,6 +79,8 @@ def embed(text: str) -> List[float]:
     model = config.EMBED_MODEL
     logger.info(f"Starting embedding for {len(text)} chars with model {model}")
     
+    session = _get_session()
+    
     # Ollama nutzt für Embeddings das Feld "prompt" (nicht "input"). Wir senden primär prompt, fallback testweise input.
     payload_prompt = {"model": model, "prompt": text}
     payload_input  = {"model": model, "input": text}
@@ -61,7 +88,7 @@ def embed(text: str) -> List[float]:
     def _call() -> tuple[List[float] | None, Any]:
         # Erst mit "prompt"
         call_start = time.time()
-        r = requests.post(f"{config.OLLAMA_URL}/api/embeddings", json=payload_prompt, timeout=120)
+        r = session.post(f"{config.OLLAMA_URL}/api/embeddings", json=payload_prompt, timeout=120)
         call_time = time.time() - call_start
         logger.info(f"Embedding API call took: {call_time:.2f}s, status: {r.status_code}")
         
@@ -76,7 +103,7 @@ def embed(text: str) -> List[float]:
             if emb:
                 return emb, body
         # Fallback mit "input" falls erste Form leer / Fehler
-        r2 = requests.post(f"{config.OLLAMA_URL}/api/embeddings", json=payload_input, timeout=120)
+        r2 = session.post(f"{config.OLLAMA_URL}/api/embeddings", json=payload_input, timeout=120)
         status2 = r2.status_code
         body2: Any = None
         try:
@@ -112,6 +139,21 @@ def chat(system: str | None, user: str) -> str:
     start_time = time.time()
     logger.info(f"Starting chat with model {config.MODEL}, prompt length: {len(user)} chars")
     
+    # Modell vorab "anpingen" um es in den Speicher zu laden
+    session = _get_session()
+    try:
+        warmup_start = time.time()
+        r_warmup = session.post(f"{config.OLLAMA_URL}/api/generate", 
+                               json={"model": config.MODEL, "prompt": "Hi", "stream": False}, 
+                               timeout=5)
+        warmup_time = time.time() - warmup_start
+        if r_warmup.status_code == 200:
+            logger.info(f"Model warmup successful in {warmup_time:.2f}s")
+        else:
+            logger.warning(f"Model warmup failed: {r_warmup.status_code}")
+    except Exception as e:
+        logger.warning(f"Model warmup failed: {str(e)[:50]}")
+    
     # System-Prompt wieder hinzufügen für brauchbare Antworten
     system_prompt = system or "Antworte kurz auf Deutsch basierend auf dem Kontext."
     
@@ -123,7 +165,7 @@ def chat(system: str | None, user: str) -> str:
             "temperature": config.TEMPERATURE,
             "num_predict": config.MAX_TOKENS,
             "num_ctx": config.NUM_CTX,
-            "num_thread": 2,
+            "num_thread": min(os.cpu_count() or 4, config.MAX_THREADS),
             "repeat_penalty": 1.1,
         },
         "messages": [
@@ -143,24 +185,17 @@ def chat(system: str | None, user: str) -> str:
             attempt_start = time.time()
             logger.info(f"Chat attempt {attempt} with {to}s timeout...")
             
-            # Session verwenden für Connection-Reuse
-            import requests
-            session = requests.Session()
-            session.headers.update({'Content-Type': 'application/json'})
-            
+            # Wiederverwendbare Session mit Connection-Pooling
             r = session.post(f"{config.OLLAMA_URL}/api/chat", json=base_payload, timeout=to)
             attempt_time = time.time() - attempt_start
             logger.info(f"Chat attempt {attempt} completed in {attempt_time:.2f}s, status: {r.status_code}")
             r.raise_for_status()
             j = r.json()
-            session.close()
             break
         except Exception as e:
             attempt_time = time.time() - attempt_start
             logger.warning(f"Chat attempt {attempt} failed after {attempt_time:.2f}s: {str(e)[:100]}")
             last_exc = e
-            if 'session' in locals():
-                session.close()
     else:
         total_time = time.time() - start_time
         logger.error(f"All chat attempts failed after {total_time:.2f}s")

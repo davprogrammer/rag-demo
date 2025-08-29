@@ -7,9 +7,10 @@ services:
     volumes:
       - /opt/rag/ollama:/root/.ollama
     environment:
-      # Schritt 4: Parallelität begrenzen & Cache warm halten
+      # Modelle länger im Speicher halten
       - OLLAMA_NUM_PARALLEL=1
-      - OLLAMA_KEEP_ALIVE=5m
+      - OLLAMA_KEEP_ALIVE=30m
+      - OLLAMA_HOST=0.0.0.0
     restart: unless-stopped
 
   chroma:

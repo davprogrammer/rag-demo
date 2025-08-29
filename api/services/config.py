@@ -8,6 +8,7 @@ TEMPERATURE = float(os.getenv("TEMPERATURE", "0.3"))
 CONTEXT_DOCS = int(os.getenv("CONTEXT_DOCS", "3"))
 MAX_CHUNK_CHARS = int(os.getenv("MAX_CHUNK_CHARS", "500"))
 NUM_CTX = int(os.getenv("NUM_CTX", "1024"))
+MAX_THREADS = int(os.getenv("MAX_THREADS", "4"))
 
 CHROMA_HOST = os.getenv("CHROMA_HOST", "chroma")
 CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
