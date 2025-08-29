@@ -47,23 +47,34 @@ def _pull_model(model: str) -> None:
 def embed(text: str) -> List[float]:
     """Holt ein Embedding; versucht einmal Pull+Retry; liefert Fehler mit Diagnose."""
     model = config.EMBED_MODEL
-    payload = {"model": model, "input": text}
+    # Ollama nutzt für Embeddings das Feld "prompt" (nicht "input"). Wir senden primär prompt, fallback testweise input.
+    payload_prompt = {"model": model, "prompt": text}
+    payload_input  = {"model": model, "input": text}
 
     def _call() -> tuple[List[float] | None, Any]:
-        r = requests.post(
-            f"{config.OLLAMA_URL}/api/embeddings",
-            json=payload,
-            timeout=120,
-        )
+        # Erst mit "prompt"
+        r = requests.post(f"{config.OLLAMA_URL}/api/embeddings", json=payload_prompt, timeout=120)
         status = r.status_code
         body: Any = None
         try:
             body = r.json()
         except Exception:
             body = r.text[:500]
-        if status >= 400:
-            return None, body
-        return _extract_embedding(body), body
+        if status < 400:
+            emb = _extract_embedding(body)
+            if emb:
+                return emb, body
+        # Fallback mit "input" falls erste Form leer / Fehler
+        r2 = requests.post(f"{config.OLLAMA_URL}/api/embeddings", json=payload_input, timeout=120)
+        status2 = r2.status_code
+        body2: Any = None
+        try:
+            body2 = r2.json()
+        except Exception:
+            body2 = r2.text[:500]
+        if status2 >= 400:
+            return None, body2
+        return _extract_embedding(body2), body2
 
     emb, raw = _call()
     if not emb:
