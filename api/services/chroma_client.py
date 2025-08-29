@@ -2,10 +2,12 @@ import chromadb
 from . import config
 
 def get_client():
-    
+    # tenant/database hier direkt an HttpClient, NICHT in Settings
+    base_url = f"http://{config.CHROMA_HOST}:{config.CHROMA_PORT}"
     return chromadb.HttpClient(
-        host=config.CHROMA_HOST,
-        port=config.CHROMA_PORT,
+        host=base_url,
+        tenant=config.TENANT,
+        database=config.DATABASE,
     )
 
 def get_collection():
