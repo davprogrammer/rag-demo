@@ -155,7 +155,7 @@ def chat(system: str | None, user: str) -> str:
         logger.warning(f"Model warmup failed: {str(e)[:50]}")
     
     # System-Prompt wieder hinzufügen für brauchbare Antworten
-    system_prompt = system or "Antworte kurz auf Deutsch basierend auf dem Kontext."
+    system_prompt = system or "Du bist ein Unternehmens-FAQ-BOT. Antworte auf deutsch und beziehe dich auf den Kontext. Keine Halluzinationen!"
     
     # Optimierte Parameter für kleineres Modell
     base_payload = {

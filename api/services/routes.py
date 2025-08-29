@@ -18,6 +18,11 @@ class QueryIn(BaseModel):
     query: str
     top_k: int | None = None
 
+# OpenWebUI RAG-Interface
+class OpenWebUIQuery(BaseModel):
+    query: str
+    knowledge_base: str | None = None
+
 @router.get("/health")
 def health():
     return {"ok": True}
