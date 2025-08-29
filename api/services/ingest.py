@@ -104,8 +104,19 @@ def ingest():
         ids   = [f"{doc}::chunk{idx}" for idx in range(len(chunks))]
         metas = [{"source": doc, "chunk": idx} for idx in range(len(chunks))]
 
-        # Embeddings erzeugen (ein Call pro Chunk; einfach & robust)
-        vectors = [ollama_client.embed(c) for c in chunks]
+        # Embeddings erzeugen (fehlertolerant: einzelne Chunks können übersprungen werden)
+        vectors = []
+        ok_ids, ok_chunks, ok_metas = [], [], []
+        for i, (cid, ch, meta) in enumerate(zip(ids, chunks, metas)):
+            try:
+                vec = ollama_client.embed(ch)
+                vectors.append(vec)
+                ok_ids.append(cid)
+                ok_chunks.append(ch)
+                ok_metas.append(meta)
+            except Exception as e:
+                print(f"[warn] {doc} chunk {i} Embedding fehlgeschlagen: {e}")
+        ids, chunks, metas = ok_ids, ok_chunks, ok_metas
 
         # Anstatt hart abzubrechen: defensiv filtern
         ids, chunks, metas, vectors, dropped = _filter_valid(ids, chunks, metas, vectors)

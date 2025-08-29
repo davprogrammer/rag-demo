@@ -23,19 +23,58 @@ def _extract_embedding(j: Any) -> List[float] | None:
         return [float(x) for x in embs[0]]
     return None
 
+def _model_present(model: str) -> bool:
+    try:
+        r = requests.get(f"{config.OLLAMA_URL}/api/tags", timeout=10)
+        if r.status_code != 200:
+            return False
+        js = r.json()
+        mods = js.get("models") if isinstance(js, dict) else None
+        if isinstance(mods, list):
+            names = {m.get("name") for m in mods if isinstance(m, dict)}
+            return model in names or any(str(model).startswith(n or "") for n in names)
+    except Exception:
+        return False
+    return False
+
+def _pull_model(model: str) -> None:
+    # Trigger Model Pull (non-streaming best-effort)
+    try:
+        requests.post(f"{config.OLLAMA_URL}/api/pull", json={"model": model}, timeout=300)
+    except Exception:
+        pass
+
 def embed(text: str) -> List[float]:
-    """Holt ein Embedding; wirft klaren Fehler, wenn keins geliefert wird."""
-    r = requests.post(
-        f"{config.OLLAMA_URL}/api/embeddings",
-        json={"model": config.EMBED_MODEL, "input": text},
-        timeout=60,
-    )
-    r.raise_for_status()
-    emb = _extract_embedding(r.json())
+    """Holt ein Embedding; versucht einmal Pull+Retry; liefert Fehler mit Diagnose."""
+    model = config.EMBED_MODEL
+    payload = {"model": model, "input": text}
+
+    def _call() -> tuple[List[float] | None, Any]:
+        r = requests.post(
+            f"{config.OLLAMA_URL}/api/embeddings",
+            json=payload,
+            timeout=120,
+        )
+        status = r.status_code
+        body: Any = None
+        try:
+            body = r.json()
+        except Exception:
+            body = r.text[:500]
+        if status >= 400:
+            return None, body
+        return _extract_embedding(body), body
+
+    emb, raw = _call()
+    if not emb:
+        # Falls Modell nicht vorhanden: Pull + Retry
+        if not _model_present(model):
+            _pull_model(model)
+            emb, raw = _call()
     if not emb:
         raise RuntimeError(
-            f"Ollama lieferte kein Embedding (Model={config.EMBED_MODEL}, InputLen={len(text)}). "
-            "Prüfe Ollama-Logs oder Modellverfügbarkeit."
+            "Ollama lieferte kein Embedding. "
+            f"Model={model} InputLen={len(text)} ResponseSnippet={str(raw)[:300]}"
         )
     return emb
 
