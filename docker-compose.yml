@@ -22,7 +22,7 @@ services:
       - CHROMA_DB_IMPL=duckdb+parquet
     restart: unless-stopped
 
-    api:
+  api:
     build: ./api
     container_name: rag-api
     env_file: .env
