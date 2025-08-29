@@ -112,7 +112,10 @@ def chat(system: str | None, user: str) -> str:
     start_time = time.time()
     logger.info(f"Starting chat with model {config.MODEL}, prompt length: {len(user)} chars")
     
-    # Nur User-Message, kein System-Prompt für maximale Geschwindigkeit
+    # System-Prompt wieder hinzufügen für brauchbare Antworten
+    system_prompt = system or "Antworte kurz auf Deutsch basierend auf dem Kontext."
+    
+    # Optimierte Parameter für kleineres Modell
     base_payload = {
         "model": config.MODEL,
         "stream": False,
@@ -120,11 +123,12 @@ def chat(system: str | None, user: str) -> str:
             "temperature": config.TEMPERATURE,
             "num_predict": config.MAX_TOKENS,
             "num_ctx": config.NUM_CTX,
-            "num_thread": 2,  # Weniger Threads
+            "num_thread": 2,
             "repeat_penalty": 1.1,
         },
         "messages": [
-            {"role": "user", "content": user},  # Nur User-Message
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user},
         ],
     }
 
