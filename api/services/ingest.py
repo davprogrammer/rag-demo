@@ -3,7 +3,7 @@ import os, glob, time
 from typing import List, Tuple
 from PyPDF2 import PdfReader
 from . import config
-from .chroma_client import get_collection
+from .chroma_client import get_collection, get_client
 from services import ollama_client
 
 # -------------------- Helpers --------------------
@@ -127,8 +127,27 @@ def ingest():
             print(f"[warn] {doc}: Alle Embeddings waren leer/ungültig – Datei übersprungen.")
             continue
 
-        # Upsert in Chroma
-        coll.upsert(ids=ids, documents=chunks, metadatas=metas, embeddings=vectors)
+        # Upsert in Chroma (mit Dimensions-Mismatch Auto-Reset Option)
+        try:
+            coll.upsert(ids=ids, documents=chunks, metadatas=metas, embeddings=vectors)
+        except Exception as e:
+            msg = str(e)
+            if (
+                "dimension" in msg.lower()
+                and os.getenv("RESET_ON_DIM_MISMATCH", "1") == "1"
+            ):
+                print("[warn] Dimensions-Mismatch erkannt. Versuche Collection neu zu erstellen …")
+                try:
+                    client = get_client()
+                    client.delete_collection(config.COLLECTION_NAME)
+                    coll = get_collection()
+                    coll.upsert(ids=ids, documents=chunks, metadatas=metas, embeddings=vectors)
+                    print("[info] Collection wegen Dimensionswechsel neu aufgebaut.")
+                except Exception as e2:
+                    print(f"[error] Neuaufbau nach Dimensions-Mismatch fehlgeschlagen: {e2}")
+                    raise
+            else:
+                raise
 
         docs += 1
         total_chunks += len(chunks)
