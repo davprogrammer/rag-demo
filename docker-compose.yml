@@ -16,8 +16,6 @@ services:
   chroma:
     image: chromadb/chroma:latest
     container_name: chroma
-    ports:
-      - "8001:8000"
     volumes:
       - /opt/rag/chroma:/chroma
     environment:
@@ -35,35 +33,25 @@ services:
       - /opt/rag/data:/app/data
     ports:
       - "8000:8000"
-    # (6) Chroma-Telemetrie AUS in deiner App (Client-seitig)
     environment:
       - ANONYMIZED_TELEMETRY=false
-    # (5) Uvicorn "best practice" Flags – schneller I/O-Stack + exakt 1 Worker
-    command: >
-      uvicorn services.main:app
-      --host 0.0.0.0 --port 8000
-      --loop uvloop --http httptools
-      --workers 1 --timeout-keep-alive 30
+    # Nutzt den CMD aus dem Dockerfile: uvicorn main:app ...
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/health || exit 1"]
+      test: ["CMD-SHELL", "python -c 'import urllib.request,sys; urllib.request.urlopen(\"http://localhost:8000/health\").read()' || exit 1"]
       interval: 20s
       timeout: 3s
       retries: 5
   openwebui:
     image: ghcr.io/open-webui/open-webui:main
     container_name: openwebui
-    ports:
-      - "3000:8080"
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
       - RAG_API_URL=http://api:8000
       - WEBUI_AUTH=false
-      - ENABLE_RAG_WEB_SEARCH=false
-    volumes:
-      - /opt/rag/openwebui:/app/backend/data
     depends_on:
-      - ollama
       - api
+    ports:
+      - "3000:8080"
     restart: unless-stopped
 
