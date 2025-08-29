@@ -3,7 +3,7 @@ import os
 
 class Settings(BaseModel):
     AUTH_TOKEN: str = os.getenv("AUTH_TOKEN", "demo-key")
-    MODEL_NAME: str = os.getenv("MODEL_NAME", "llama3.2:3b-instruct-q4_K_M")
+    MODEL_NAME: str = os.getenv("MODEL_NAME", "llama3.2")
     EMBED_MODEL: str = os.getenv("EMBED_MODEL", "bge-m3")
 
     RAG_TOPK: int = int(os.getenv("RAG_TOPK", "12"))

@@ -19,33 +19,41 @@ class OllamaClient:
         return data["embedding"]
     
     def generate(self, prompt: str) -> str:
-        """
-        Fallback bei 404 auf /api/chat zurück.
-        """
+
         options = {"temperature": settings.TEMPERATURE, "num_ctx": settings.NUM_CTX}
 
-        # 1) Versuch: /api/generate
-        payload_gen = {"model": settings.MODEL_NAME, "prompt": prompt, "stream": False, "options": options}
-        r = self._client.post("/api/generate", json=payload_gen)
+        payload = {
+            "model": settings.MODEL_NAME,
+            "prompt": prompt,
+            "stream": False,
+            "options": options,
+        }
+
+        r = self._client.post("/api/generate", json=payload)
+
         if r.status_code == 404:
-            
-        # 2) Fallback: /api/chat
-            payload_chat = {
-                "model": settings.MODEL_NAME,
-                "messages": [{"role": "user", "content": prompt}],
-                "stream": False,
-                "options": options,
-            }
-            r = self._client.post("/api/chat", json=payload_chat)
+            # Modelle vom Server auflisten für Debug
+            try:
+                tags = self._client.get("/api/tags").json()
+                available = [m.get("name") for m in tags.get("models", [])]
+            except Exception:
+                available = []
+            raise RuntimeError(
+                f"Model '{settings.MODEL_NAME}' not found. "
+                f"Available models: {available}"
+            )
 
         r.raise_for_status()
         data = r.json()
-        # /api/generate => {"response": "..."}
+
+        # /api/generate liefert {"response": "..."}
         if isinstance(data, dict) and "response" in data:
             return data["response"]
-        # /api/chat => {"message": {"content": "..."}}
+
+        # Fallback: falls Format anders ist
         msg = data.get("message", {})
         return msg.get("content", "")
+
 
 
 
