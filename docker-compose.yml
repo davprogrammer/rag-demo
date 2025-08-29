@@ -16,6 +16,8 @@ services:
   chroma:
     image: chromadb/chroma:latest
     container_name: chroma
+    ports:
+      - "8001:8000"
     volumes:
       - /opt/rag/chroma:/chroma
     environment:
@@ -48,5 +50,20 @@ services:
       interval: 20s
       timeout: 3s
       retries: 5
-
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: openwebui
+    ports:
+      - "3000:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - RAG_API_URL=http://api:8000
+      - WEBUI_AUTH=false
+      - ENABLE_RAG_WEB_SEARCH=false
+    volumes:
+      - /opt/rag/openwebui:/app/backend/data
+    depends_on:
+      - ollama
+      - api
+    restart: unless-stopped
 
