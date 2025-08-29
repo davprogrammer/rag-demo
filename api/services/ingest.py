@@ -2,8 +2,8 @@
 import os, glob, time
 from typing import List, Tuple
 from PyPDF2 import PdfReader
-from services import config
-from .chroma_client import get_collection, get_client
+from services.config import config
+from services.chroma_client import get_collection, get_client
 from services import ollama_client
 
 # -------------------- Helpers --------------------
