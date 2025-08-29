@@ -39,17 +39,14 @@ def build_prompt(query: str, results) -> str:
     max_docs = config.CONTEXT_DOCS
     max_len = config.MAX_CHUNK_CHARS
     raw_docs = results.get("documents", [[]])[0][:max_docs]
-    raw_metas = results.get("metadatas", [[]])[0][:max_docs]
-    parts = []
-    for d, m in zip(raw_docs, raw_metas):
-        d_trim = (d[:max_len] + "…") if len(d) > max_len else d
-        src = m.get("source", "?")
-        chk = m.get("chunk", "?")
-        parts.append(f"[Quelle: {src}#{chk}]\n{d_trim}\n")
-    context = "\n---\n".join(parts)
-    return (
-        f"Frage: {query}\n\n"
-        f"Kontext (nur diese Ausschnitte):\n{context}\n\n"
-        "Antworte knapp auf Deutsch. Wenn nicht beantwortbar: 'Ich weiß es nicht'. "
-        "Ende mit 'Quellen:' Liste Datei#Chunk."
-    )
+    
+    # Minimaler Kontext - nur Text, keine Metadaten
+    docs_text = []
+    for d in raw_docs:
+        d_trim = d[:max_len] if len(d) > max_len else d
+        docs_text.append(d_trim)
+    
+    context = " ".join(docs_text)
+    
+    # Extrem kompakter Prompt wie OpenWebUI
+    return f"{context}\n\nQ: {query}\nA:"

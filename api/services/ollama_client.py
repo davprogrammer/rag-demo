@@ -112,6 +112,7 @@ def chat(system: str | None, user: str) -> str:
     start_time = time.time()
     logger.info(f"Starting chat with model {config.MODEL}, prompt length: {len(user)} chars")
     
+    # Nur User-Message, kein System-Prompt für maximale Geschwindigkeit
     base_payload = {
         "model": config.MODEL,
         "stream": False,
@@ -119,17 +120,16 @@ def chat(system: str | None, user: str) -> str:
             "temperature": config.TEMPERATURE,
             "num_predict": config.MAX_TOKENS,
             "num_ctx": config.NUM_CTX,
+            "num_thread": 2,  # Weniger Threads
+            "repeat_penalty": 1.1,
         },
         "messages": [
-            {"role": "system", "content": system or (
-                "Du bist ein Unternehmens-FAQ-Assistent. Antworte nur anhand des Kontextes, "
-                "sage 'Ich weiß es nicht'. Nenne am Ende die Quellen."
-            )},
-            {"role": "user", "content": user},
+            {"role": "user", "content": user},  # Nur User-Message
         ],
     }
 
-    timeouts = [30, 60]  # schneller abbrechen bei Hängern, dann längerer zweiter Versuch
+    # Kürzere Timeouts für schnellere Diagnose
+    timeouts = [15, 45]  # 15s dann 45s statt 30s, 60s
     last_exc = None
     attempt = 0
     
@@ -138,16 +138,25 @@ def chat(system: str | None, user: str) -> str:
         try:
             attempt_start = time.time()
             logger.info(f"Chat attempt {attempt} with {to}s timeout...")
-            r = requests.post(f"{config.OLLAMA_URL}/api/chat", json=base_payload, timeout=to)
+            
+            # Session verwenden für Connection-Reuse
+            import requests
+            session = requests.Session()
+            session.headers.update({'Content-Type': 'application/json'})
+            
+            r = session.post(f"{config.OLLAMA_URL}/api/chat", json=base_payload, timeout=to)
             attempt_time = time.time() - attempt_start
             logger.info(f"Chat attempt {attempt} completed in {attempt_time:.2f}s, status: {r.status_code}")
             r.raise_for_status()
             j = r.json()
+            session.close()
             break
         except Exception as e:
             attempt_time = time.time() - attempt_start
             logger.warning(f"Chat attempt {attempt} failed after {attempt_time:.2f}s: {str(e)[:100]}")
             last_exc = e
+            if 'session' in locals():
+                session.close()
     else:
         total_time = time.time() - start_time
         logger.error(f"All chat attempts failed after {total_time:.2f}s")
