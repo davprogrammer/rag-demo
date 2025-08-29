@@ -3,4 +3,4 @@ router = APIRouter()
 
 @router.get("/healthz")
 def healthz():
-    return {"ok": True, "phase": 1}
+    return {True}
