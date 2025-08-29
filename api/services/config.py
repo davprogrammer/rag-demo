@@ -1,20 +1,20 @@
+from pydantic import BaseModel
 import os
 
-MODEL = os.getenv("MODEL", "llama3.1:8b-instruct-q4_K_M")
-EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
-TOP_K = int(os.getenv("TOP_K", "6"))
-MAX_TOKENS = int(os.getenv("MAX_TOKENS", "512"))
-TEMPERATURE = float(os.getenv("TEMPERATURE", "0.3"))
-CONTEXT_DOCS = int(os.getenv("CONTEXT_DOCS", "3"))
-MAX_CHUNK_CHARS = int(os.getenv("MAX_CHUNK_CHARS", "500"))
-NUM_CTX = int(os.getenv("NUM_CTX", "1024"))
-MAX_THREADS = int(os.getenv("MAX_THREADS", "4"))
+class Settings(BaseModel):
+    AUTH_TOKEN: str = os.getenv("AUTH_TOKEN", "demo-key")
+    MODEL_NAME: str = os.getenv("MODEL_NAME", "llama3.2:3b-instruct-q4_K_M")
+    EMBED_MODEL: str = os.getenv("EMBED_MODEL", "bge-m3")
 
-CHROMA_HOST = os.getenv("CHROMA_HOST", "chroma")
-CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "company-faq")
-TENANT = os.getenv("CHROMA_TENANT", "default_tenant")
-DATABASE = os.getenv("CHROMA_DATABASE", "default_database")
+    RAG_TOPK: int = int(os.getenv("RAG_TOPK", "12"))
+    RAG_RETURN: int = int(os.getenv("RAG_RETURN", "5"))
+    RAG_MMR_LAMBDA: float = float(os.getenv("RAG_MMR_LAMBDA", "0.5"))
+    RAG_MAX_CTX_TOKENS: int = int(os.getenv("RAG_MAX_CTX_TOKENS", "1500"))
+    NUM_CTX: int = int(os.getenv("NUM_CTX", "3072"))
+    TEMPERATURE: float = float(os.getenv("TEMPERATURE", "0.2"))
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
-DATA_DIR = os.getenv("DATA_DIR", "/app/data")
+    OLLAMA_URL: str = os.getenv("OLLAMA_URL", "http://ollama:11434")
+    QDRANT_URL: str = os.getenv("QDRANT_URL", "http://qdrant:6333")
+    QDRANT_COLLECTION: str = os.getenv("QDRANT_COLLECTION", "docs")
+
+settings = Settings()
