@@ -3,7 +3,7 @@ from typing import List
 from PyPDF2 import PdfReader
 from . import config
 from .chroma_client import get_collection
-from .ollama_client import embed as embed_one
+from services import ollama_client
 
 def read_pdf_text(path: str) -> str:
     reader = PdfReader(path)
@@ -42,10 +42,25 @@ def ingest():
             continue
         ids = [f"{doc}::chunk{idx}" for idx in range(len(chunks))]
         metas = [{"source": doc, "chunk": idx} for idx in range(len(chunks))]
-        vectors = []
-        B = 12
-        for i in range(0, len(chunks), B):
-            vectors.extend([embed_one(t) for t in chunks[i:i+B]])
+        vectors = [ollama_client.embed(c) for c in chunks]
+
+        # Neue Validierung: Längen und Form prüfen
+        if not vectors:
+            raise RuntimeError("Keine Embeddings generiert (vectors ist leer). Prüfe ollama_client.embed().")
+        if not (len(ids) == len(chunks) == len(metas) == len(vectors)):
+            raise RuntimeError(
+                f"Mismatch lengths: ids={len(ids)}, chunks={len(chunks)}, metas={len(metas)}, vectors={len(vectors)}"
+            )
+        # Prüfe jede Embedding-Form und Typ
+        for i, v in enumerate(vectors):
+            if not isinstance(v, (list, tuple)) or len(v) == 0:
+                raise RuntimeError(f"Embedding #{i} ist leer oder kein list/tuple: {v!r}")
+            if not all(isinstance(x, (int, float)) for x in v):
+                raise RuntimeError(f"Embedding #{i} enthält nicht-numerische Werte: sample={v[:5]!r}")
+
+        # optional: konvertiere tuple -> list
+        vectors = [list(v) for v in vectors]
+
         coll.upsert(ids=ids, documents=chunks, metadatas=metas, embeddings=vectors)
         docs += 1; total += len(chunks)
         print(f"[ingest] {doc}: {len(chunks)} Chunks")
