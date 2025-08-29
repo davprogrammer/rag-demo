@@ -22,8 +22,10 @@ class OllamaClient:
 
         options = {"temperature": settings.TEMPERATURE, "num_ctx": settings.NUM_CTX}
 
+        model_name = settings.MODEL
+
         payload = {
-            "model": settings.MODEL_NAME,
+            "model": model_name,
             "prompt": prompt,
             "stream": False,
             "options": options,
@@ -38,9 +40,12 @@ class OllamaClient:
                 available = [m.get("name") for m in tags.get("models", [])]
             except Exception:
                 available = []
+            # Versuche einfachen Namen ohne Suffix zu matchen
+            simple = model_name.split(":")[0]
+            simple_matches = [a for a in available if a.startswith(simple)]
+            hint = f" Did you mean one of: {simple_matches}" if simple_matches else ""
             raise RuntimeError(
-                f"Model '{settings.MODEL_NAME}' not found. "
-                f"Available models: {available}"
+                f"Model '{model_name}' not found. Available models: {available}.{hint}"
             )
 
         r.raise_for_status()
