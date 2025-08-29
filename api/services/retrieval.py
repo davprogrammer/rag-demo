@@ -2,16 +2,38 @@
 from . import config
 from .chroma_client import get_collection
 from .ollama_client import embed as embed_one
+import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 def retrieve(query: str, k: int | None = None):
+    start_time = time.time()
     k = k or config.TOP_K
+    logger.info(f"Starting retrieval for query, k={k}")
+    
+    # Embedding-Phase
+    embed_start = time.time()
     qvec = embed_one(query)
+    embed_time = time.time() - embed_start
+    logger.info(f"Query embedding took: {embed_time:.2f}s")
+    
+    # Chroma-Abfrage
+    chroma_start = time.time()
     coll = get_collection()
-    return coll.query(
+    results = coll.query(
         query_embeddings=[qvec],
         n_results=k,
         include=["documents", "metadatas", "distances"]
     )
+    chroma_time = time.time() - chroma_start
+    logger.info(f"Chroma query took: {chroma_time:.2f}s")
+    
+    total_time = time.time() - start_time
+    doc_count = len(results.get("documents", [[]])[0]) if results else 0
+    logger.info(f"Retrieval completed in {total_time:.2f}s, found {doc_count} documents")
+    
+    return results
 
 def build_prompt(query: str, results) -> str:
     max_docs = config.CONTEXT_DOCS

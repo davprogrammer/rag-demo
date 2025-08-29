@@ -1,6 +1,10 @@
 import requests
 from typing import Any, List
 from . import config
+import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 def _extract_embedding(j: Any) -> List[float] | None:
     """Versucht verschiedene mögliche Ollama-Embedding-Response-Layouts zu interpretieren."""
@@ -46,14 +50,21 @@ def _pull_model(model: str) -> None:
 
 def embed(text: str) -> List[float]:
     """Holt ein Embedding; versucht einmal Pull+Retry; liefert Fehler mit Diagnose."""
+    start_time = time.time()
     model = config.EMBED_MODEL
+    logger.info(f"Starting embedding for {len(text)} chars with model {model}")
+    
     # Ollama nutzt für Embeddings das Feld "prompt" (nicht "input"). Wir senden primär prompt, fallback testweise input.
     payload_prompt = {"model": model, "prompt": text}
     payload_input  = {"model": model, "input": text}
 
     def _call() -> tuple[List[float] | None, Any]:
         # Erst mit "prompt"
+        call_start = time.time()
         r = requests.post(f"{config.OLLAMA_URL}/api/embeddings", json=payload_prompt, timeout=120)
+        call_time = time.time() - call_start
+        logger.info(f"Embedding API call took: {call_time:.2f}s, status: {r.status_code}")
+        
         status = r.status_code
         body: Any = None
         try:
@@ -80,8 +91,16 @@ def embed(text: str) -> List[float]:
     if not emb:
         # Falls Modell nicht vorhanden: Pull + Retry
         if not _model_present(model):
+            logger.warning(f"Model {model} not present, attempting pull...")
+            pull_start = time.time()
             _pull_model(model)
+            pull_time = time.time() - pull_start
+            logger.info(f"Model pull took: {pull_time:.2f}s")
             emb, raw = _call()
+    
+    total_time = time.time() - start_time
+    logger.info(f"Total embedding time: {total_time:.2f}s, vector dimension: {len(emb) if emb else 0}")
+    
     if not emb:
         raise RuntimeError(
             "Ollama lieferte kein Embedding. "
@@ -90,6 +109,9 @@ def embed(text: str) -> List[float]:
     return emb
 
 def chat(system: str | None, user: str) -> str:
+    start_time = time.time()
+    logger.info(f"Starting chat with model {config.MODEL}, prompt length: {len(user)} chars")
+    
     base_payload = {
         "model": config.MODEL,
         "stream": False,
@@ -109,16 +131,30 @@ def chat(system: str | None, user: str) -> str:
 
     timeouts = [30, 60]  # schneller abbrechen bei Hängern, dann längerer zweiter Versuch
     last_exc = None
+    attempt = 0
+    
     for to in timeouts:
+        attempt += 1
         try:
+            attempt_start = time.time()
+            logger.info(f"Chat attempt {attempt} with {to}s timeout...")
             r = requests.post(f"{config.OLLAMA_URL}/api/chat", json=base_payload, timeout=to)
+            attempt_time = time.time() - attempt_start
+            logger.info(f"Chat attempt {attempt} completed in {attempt_time:.2f}s, status: {r.status_code}")
             r.raise_for_status()
             j = r.json()
             break
         except Exception as e:
+            attempt_time = time.time() - attempt_start
+            logger.warning(f"Chat attempt {attempt} failed after {attempt_time:.2f}s: {str(e)[:100]}")
             last_exc = e
     else:
+        total_time = time.time() - start_time
+        logger.error(f"All chat attempts failed after {total_time:.2f}s")
         raise RuntimeError(f"Chat fehlgeschlagen nach Retries: {last_exc}")
+    
+    total_time = time.time() - start_time
+    logger.info(f"Chat completed successfully in {total_time:.2f}s")
     # robuste Extraktion
     if isinstance(j, dict):
         msg = j.get("message")
