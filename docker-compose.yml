@@ -22,7 +22,7 @@ services:
       - CHROMA_DB_IMPL=duckdb+parquet
     restart: unless-stopped
 
-  api:
+    api:
     build: ./api
     container_name: rag-api
     env_file: .env
@@ -33,17 +33,20 @@ services:
       - /opt/rag/data:/app/data
     ports:
       - "8000:8000"
-    restart: unless-stopped
-
-  openwebui:
-    image: ghcr.io/open-webui/open-webui:main
-    container_name: openwebui
+    # (6) Chroma-Telemetrie AUS in deiner App (Client-seitig)
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - RAG_API_URL=http://api:8000
-    depends_on:
-      - api
-    ports:
-      - "3000:8080"
+      - ANONYMIZED_TELEMETRY=false
+    # (5) Uvicorn "best practice" Flags – schneller I/O-Stack + exakt 1 Worker
+    command: >
+      uvicorn services.main:app
+      --host 0.0.0.0 --port 8000
+      --loop uvloop --http httptools
+      --workers 1 --timeout-keep-alive 30
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/health || exit 1"]
+      interval: 20s
+      timeout: 3s
+      retries: 5
+
 

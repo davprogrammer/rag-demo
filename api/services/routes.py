@@ -89,7 +89,11 @@ def query(inp: QueryIn):
         # 4. Chat-Phase detailliert messen
         chat_start = time.time()
         logger.info("Starting chat request...")
-        answer = chat(None, prompt)
+        
+        # Expliziter System-Prompt für bessere Kontrolle
+        system_prompt = "Du bist ein hilfreicher FAQ-Assistent. Antworte NUR basierend auf dem gegebenen Kontext. Wenn der Kontext keine Antwort enthält, sage ehrlich 'Das kann ich anhand der verfügbaren Informationen nicht beantworten.' Antworte auf Deutsch."
+        answer = chat(system_prompt, prompt)
+        
         chat_time = time.time() - chat_start
         performance_log["chat_ms"] = round(chat_time * 1000, 2)
         logger.info(f"Chat took: {chat_time:.2f}s")
@@ -144,7 +148,10 @@ def openwebui_rag(inp: OpenWebUIQuery):
         
         # Kompakter Prompt für bessere Performance
         prompt = build_prompt(inp.query, res)
-        answer = chat(None, prompt)
+        
+        # System-Prompt für OpenWebUI
+        system_prompt = "Du bist ein hilfreicher FAQ-Assistent. Antworte NUR basierend auf dem gegebenen Kontext. Wenn der Kontext keine Antwort enthält, sage ehrlich 'Das kann ich anhand der verfügbaren Informationen nicht beantworten.' Antworte auf Deutsch."
+        answer = chat(system_prompt, prompt)
         
         # Sources für OpenWebUI formatieren
         sources = [

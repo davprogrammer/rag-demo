@@ -154,8 +154,11 @@ def chat(system: str | None, user: str) -> str:
     except Exception as e:
         logger.warning(f"Model warmup failed: {str(e)[:50]}")
     
-    # System-Prompt wieder hinzufügen für brauchbare Antworten
-    system_prompt = "Du bist ein hilfreicher FAQ-Chatbot. Antworte ausschließlich basierend auf dem gegebenen Kontext. Wenn die Frage nicht beantwortet werden kann, sage dies ehrlich. Bitte antworte auf deutsch"
+    # System-Prompt verwenden (Parameter hat Vorrang vor Default)
+    if system:
+        system_prompt = system
+    else:
+        system_prompt = "Du bist ein hilfreicher FAQ-Chatbot. Antworte ausschließlich basierend auf dem gegebenen Kontext. Wenn die Frage nicht beantwortet werden kann, sage dies ehrlich. Bitte antworte auf deutsch"
     
     # Optimierte Parameter für kleineres Modell
     base_payload = {

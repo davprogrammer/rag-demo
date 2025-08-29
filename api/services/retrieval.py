@@ -48,5 +48,8 @@ def build_prompt(query: str, results) -> str:
     
     context = " ".join(docs_text)
     
-    # Extrem kompakter Prompt wie OpenWebUI
-    return f"{context}\n\nQ: {query}\nA:"
+    # Klarerer Prompt mit Kontext-Abgrenzung
+    if context.strip():
+        return f"Kontext:\n{context}\n\nFrage: {query}\n\nBitte beantworte die Frage basierend auf dem obigen Kontext:"
+    else:
+        return f"Frage: {query}\n\nKein relevanter Kontext verfügbar."
