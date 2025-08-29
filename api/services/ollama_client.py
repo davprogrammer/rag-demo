@@ -90,10 +90,14 @@ def embed(text: str) -> List[float]:
     return emb
 
 def chat(system: str | None, user: str) -> str:
-    payload = {
+    base_payload = {
         "model": config.MODEL,
         "stream": False,
-        "options": {"temperature": config.TEMPERATURE, "num_predict": config.MAX_TOKENS},
+        "options": {
+            "temperature": config.TEMPERATURE,
+            "num_predict": config.MAX_TOKENS,
+            "num_ctx": config.NUM_CTX,
+        },
         "messages": [
             {"role": "system", "content": system or (
                 "Du bist ein Unternehmens-FAQ-Assistent. Antworte nur anhand des Kontextes, "
@@ -102,9 +106,19 @@ def chat(system: str | None, user: str) -> str:
             {"role": "user", "content": user},
         ],
     }
-    r = requests.post(f"{config.OLLAMA_URL}/api/chat", json=payload, timeout=120)
-    r.raise_for_status()
-    j = r.json()
+
+    timeouts = [30, 60]  # schneller abbrechen bei Hängern, dann längerer zweiter Versuch
+    last_exc = None
+    for to in timeouts:
+        try:
+            r = requests.post(f"{config.OLLAMA_URL}/api/chat", json=base_payload, timeout=to)
+            r.raise_for_status()
+            j = r.json()
+            break
+        except Exception as e:
+            last_exc = e
+    else:
+        raise RuntimeError(f"Chat fehlgeschlagen nach Retries: {last_exc}")
     # robuste Extraktion
     if isinstance(j, dict):
         msg = j.get("message")
