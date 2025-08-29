@@ -119,5 +119,56 @@ def query(inp: QueryIn):
         logger.error(f"Query failed after {total_time:.2f}s: {str(e)}")
         return {
             "error": str(e),
-            "performance": {**performance_log, "total_ms": round(total_time * 1000, 2)}
+            "performance": {"total_ms": round(total_time * 1000, 2)}
+        }
+
+
+@router.post("/rag")
+def openwebui_rag(inp: OpenWebUIQuery):
+    """RAG-Endpoint speziell für OpenWebUI Integration."""
+    start_time = time.time()
+    
+    try:
+        logger.info(f"OpenWebUI RAG query: '{inp.query[:50]}...'")
+        
+        # Standard RAG-Pipeline nutzen
+        res = retrieve(inp.query, top_k=3)
+        docs = res.get("documents", [[]])[0]
+        
+        if not docs:
+            return {
+                "response": "Ich weiß es nicht - keine relevanten Informationen gefunden.",
+                "sources": [],
+                "response_time": round((time.time() - start_time) * 1000, 2)
+            }
+        
+        # Kompakter Prompt für bessere Performance
+        prompt = build_prompt(inp.query, res)
+        answer = chat(None, prompt)
+        
+        # Sources für OpenWebUI formatieren
+        sources = [
+            {
+                "name": m.get("source", "unknown"),
+                "content": d[:200] + "..." if len(d) > 200 else d,
+                "score": float(s)
+            }
+            for d, m, s in zip(docs, res["metadatas"][0], res["distances"][0])
+        ]
+        
+        total_time = time.time() - start_time
+        logger.info(f"OpenWebUI RAG completed in {total_time:.2f}s")
+        
+        return {
+            "response": answer,
+            "sources": sources,
+            "response_time": round(total_time * 1000, 2)
+        }
+        
+    except Exception as e:
+        logger.error(f"OpenWebUI RAG error: {str(e)}")
+        return {
+            "response": f"Fehler bei der Suche: {str(e)[:100]}",
+            "sources": [],
+            "response_time": round((time.time() - start_time) * 1000, 2)
         }
