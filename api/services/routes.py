@@ -36,14 +36,17 @@ def _build_prompt(user_msg: str) -> str:
 
 # OpenAI: Chat Completions (Passthrough → Ollama)
 @router.post("/v1/chat/completions")
-def chat_completions(payload: dict = Body(...), authorization: str | None = Header(None)):
+def chat_completions(
+    payload: dict = Body(...),
+    authorization: str | None = Header(None)
+):
     if not authorization or authorization.split()[-1] != settings.AUTH_TOKEN:
         raise HTTPException(status_code=401, detail="invalid API key")
 
     messages = payload.get("messages", [])
     stream = bool(payload.get("stream", False))
 
-    # letzte User-Nachricht
+    # letzte User-Nachricht finden
     user_msg = ""
     for m in reversed(messages):
         if m.get("role") == "user":
@@ -52,7 +55,8 @@ def chat_completions(payload: dict = Body(...), authorization: str | None = Head
 
     client = OllamaClient()
     prompt = _build_prompt(user_msg)
-    t0 = time.time()
+
+    # ... oberer Teil der Funktion unverändert ...
 
     if not stream:
         text = client.generate(prompt).strip()
@@ -70,6 +74,18 @@ def chat_completions(payload: dict = Body(...), authorization: str | None = Head
             "usage": {},
             "latency_sec": latency
         }
+
+    # >>> HIER der fehlende Return für Streaming:
+    return StreamingResponse(
+        event_stream(prompt, client, settings.MODEL_NAME),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
 
 def event_stream(prompt: str, client: OllamaClient, model_id: str):
 
