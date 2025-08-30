@@ -1,11 +1,9 @@
-
-
 services:
   ollama:
     image: ollama/ollama:latest
+    env_file: .env
     ports: ["127.0.0.1:11434:11434"]
     volumes: ["ollama:/root/.ollama"]
-    environment: ["OLLAMA_KEEP_ALIVE=12h"]
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -14,29 +12,16 @@ services:
 
   api:
     build: ./api
-    environment:
-      - AUTH_TOKEN=demo-key
-      - MODEL_NAME=llama3.2:3b-instruct-q4_K_M
-      - EMBED_MODEL=bge-m3
-      - RAG_TOPK=12
-      - RAG_RETURN=5
-      - RAG_MMR_LAMBDA=0.5
-      - RAG_MAX_CTX_TOKENS=1500
-      - NUM_CTX=3072
-      - TEMPERATURE=0.2
-      - OLLAMA_URL=http://ollama:11434
-      - QDRANT_URL=http://qdrant:6333
-      - QDRANT_COLLECTION=docs
+    env_file: .env
     ports: ["127.0.0.1:8000:8000"]
-    volumes:
-      - ./data:/app/data
+    volumes: ["./data:/app/data"]
     depends_on: [ollama, qdrant]
 
   openwebui:
     image: ghcr.io/open-webui/open-webui:main
     environment:
       - OPENAI_API_BASE_URL=http://api:8000/v1
-      - OPENAI_API_KEY=demo-key
+      - OPENAI_API_KEY=${AUTH_TOKEN:-demo-key}
     ports: ["127.0.0.1:3000:8080"]
     depends_on: [api]
 
