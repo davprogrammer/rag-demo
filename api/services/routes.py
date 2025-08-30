@@ -1,29 +1,30 @@
-import time, uuid, json
+import time, uuid, json, logging
 from fastapi import APIRouter, Body, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from .config import settings
 from .ollama_client import OllamaClient
 from httpx import Client
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 @router.get("/healthz")
 def healthz():
-    # gültiges JSON-Objekt statt {True}
     try:
         ok_ollama = OllamaClient().ping()
     except Exception:
         ok_ollama = False
     return {"ollama": ok_ollama}
 
-# OpenAI: Model-Liste (für OWUI Dropdown)
 @router.get("/v1/models")
 def list_models():
+    # Modell-Feld robust auswählen
+    model_id = getattr(settings, "MODEL", None) or getattr(settings, "MODEL_NAME", "unknown-model")
     return {
         "object": "list",
         "data": [{
-            "id": settings.MODEL_NAME,
+            "id": model_id,
             "object": "model",
             "created": int(time.time()),
             "owned_by": "local",
@@ -31,10 +32,12 @@ def list_models():
     }
 
 def _build_prompt(user_msg: str) -> str:
-    # Für den Start: einfacher Prompt (ohne RAG)
-    return f"Antworte präzise und kurz auf Deutsch.\n\nFrage: {user_msg}\nAntwort:"
+    return (
+        "System: Du bist ein hilfreicher Assistent. Antworte auf Deutsch, "
+        "kurz und präzise. Wenn unklar oder kein Kontext: Sage, dass dir Informationen fehlen.\n\n"
+        f"Frage: {user_msg}\nAntwort:"
+    )
 
-# OpenAI: Chat Completions (Passthrough → Ollama)
 @router.post("/v1/chat/completions")
 def chat_completions(
     payload: dict = Body(...),
@@ -43,29 +46,35 @@ def chat_completions(
     if not authorization or authorization.split()[-1] != settings.AUTH_TOKEN:
         raise HTTPException(status_code=401, detail="invalid API key")
 
+    # OpenAI-kompatible Felder
     messages = payload.get("messages", [])
-    stream = bool(payload.get("stream", False))
+    # Sichere Stream-Erkennung (nur True akzeptieren)
+    stream_flag = payload.get("stream", False) is True
 
-    # letzte User-Nachricht finden
+    # Letzte User-Nachricht
     user_msg = ""
     for m in reversed(messages):
         if m.get("role") == "user":
             user_msg = m.get("content", "")
             break
+    if not user_msg:
+        raise HTTPException(status_code=400, detail="no user message found")
 
-    client = OllamaClient()
+    model_id = getattr(settings, "MODEL", None) or getattr(settings, "MODEL_NAME", "unknown-model")
     prompt = _build_prompt(user_msg)
+    client = OllamaClient()
 
-    # ... oberer Teil der Funktion unverändert ...
+    t0 = time.time()
 
-    if not stream:
-        text = client.generate(prompt).strip()
+    if not stream_flag:
+        logger.info("Non-stream chat start model=%s prompt_len=%d", model_id, len(prompt))
+        text = client.generate(prompt, model_id=model_id).strip()
         latency = round(time.time() - t0, 3)
         return {
             "id": f"chatcmpl-{uuid.uuid4()}",
             "object": "chat.completion",
             "created": int(time.time()),
-            "model": settings.MODEL_NAME,
+            "model": model_id,
             "choices": [{
                 "index": 0,
                 "message": {"role": "assistant", "content": text},
@@ -75,9 +84,9 @@ def chat_completions(
             "latency_sec": latency
         }
 
-    # >>> HIER der fehlende Return für Streaming:
+    logger.info("Stream chat start model=%s prompt_len=%d", model_id, len(prompt))
     return StreamingResponse(
-        event_stream(prompt, client, settings.MODEL_NAME),
+        event_stream(prompt, client, model_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -86,12 +95,10 @@ def chat_completions(
         },
     )
 
-
 def event_stream(prompt: str, client: OllamaClient, model_id: str):
-
-    # OpenAI-kompatibler Start-Chunk
+    start_id = f"chatcmpl-{uuid.uuid4()}"
     start = {
-        "id": f"chatcmpl-{uuid.uuid4()}",
+        "id": start_id,
         "object": "chat.completion.chunk",
         "created": int(time.time()),
         "model": model_id,
@@ -99,24 +106,33 @@ def event_stream(prompt: str, client: OllamaClient, model_id: str):
     }
     yield f"data: {json.dumps(start)}\n\n"
 
-    options = {"temperature": settings.TEMPERATURE, "num_ctx": settings.NUM_CTX}
-    if settings.MAX_TOKENS:
+    options = {}
+    # Optional: temperature / num_predict nur setzen wenn vorhanden
+    if hasattr(settings, "TEMPERATURE"):
+        options["temperature"] = settings.TEMPERATURE
+    if hasattr(settings, "NUM_CTX"):
+        options["num_ctx"] = settings.NUM_CTX
+    if getattr(settings, "MAX_TOKENS", None):
         options["num_predict"] = settings.MAX_TOKENS
 
+    base_url = getattr(client, "base_url", "http://ollama:11434")
+    payload = {
+        "model": model_id,
+        "prompt": prompt,
+        "stream": True,
+        "options": options
+    }
+
     try:
-        # Strom von Ollama holen
-        with Client(base_url=client.base_url, timeout=None) as s:
-            payload = {"model": model_id, "prompt": prompt, "stream": True, "options": options}
+        with Client(base_url=base_url, timeout=None) as s:
             with s.stream("POST", "/api/generate", json=payload) as r:
                 r.raise_for_status()
-                # Wichtig: Unicode dekodieren, leere Zeilen überspringen
-                for line in r.iter_lines(decode_unicode=True):
+                for line in r.iter_lines():
                     if not line:
                         continue
                     try:
                         obj = json.loads(line)
                     except Exception:
-                        # falls mal Non-JSON kommt, ignoriere
                         continue
                     if obj.get("done"):
                         break
@@ -124,32 +140,41 @@ def event_stream(prompt: str, client: OllamaClient, model_id: str):
                     if not piece:
                         continue
                     chunk = {
-                        "id": start["id"],
+                        "id": start_id,
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
                         "model": model_id,
-                        "choices": [{"index": 0, "delta": {"content": piece}, "finish_reason": None}],
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"content": piece},
+                            "finish_reason": None
+                        }],
                     }
                     yield f"data: {json.dumps(chunk)}\n\n"
-
     except Exception as e:
-        # Fehler chunken, statt Verbindung hart zu kappen
         err = {
-            "id": start["id"],
+            "id": start_id,
             "object": "chat.completion.chunk",
             "created": int(time.time()),
             "model": model_id,
-            "choices": [{"index": 0, "delta": {"content": f"\n\n[Fehler: {type(e).__name__}]"}, "finish_reason": None}],
+            "choices": [{
+                "index": 0,
+                "delta": {"content": f"\n[Fehler: {type(e).__name__}: {e}]"},
+                "finish_reason": None
+            }],
         }
         yield f"data: {json.dumps(err)}\n\n"
 
-    # Sauber beenden
     end = {
-        "id": start["id"],
+        "id": start_id,
         "object": "chat.completion.chunk",
         "created": int(time.time()),
         "model": model_id,
-        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        "choices": [{
+            "index": 0,
+            "delta": {},
+            "finish_reason": "stop"
+        }],
     }
     yield f"data: {json.dumps(end)}\n\n"
     yield "data: [DONE]\n\n"
