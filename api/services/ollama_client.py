@@ -20,7 +20,7 @@ class OllamaClient:
     
     def generate(self, prompt: str) -> str:
 
-        options = {"temperature": settings.TEMPERATURE, "num_ctx": settings.NUM_CTX}
+        options = {"temperature": settings.TEMPERATURE, "num_ctx": settings.NUM_CTX, "num_predict" : settings.MAX_TOKENS}
 
         model_name = settings.MODEL_NAME
 
