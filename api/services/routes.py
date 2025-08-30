@@ -3,6 +3,8 @@ from fastapi import APIRouter, Body, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from .config import settings
 from .ollama_client import OllamaClient
+from httpx import Client
+
 
 router = APIRouter()
 
@@ -69,33 +71,36 @@ def chat_completions(payload: dict = Body(...), authorization: str | None = Head
             "latency_sec": latency
         }
 
-    # Streaming (OpenAI-kompatible SSE-Chunks)
-    def event_stream():
-        start = {
-            "id": f"chatcmpl-{uuid.uuid4()}",
-            "object": "chat.completion.chunk",
-            "created": int(time.time()),
-            "model": settings.MODEL_NAME,
-            "choices": [{"index": 0, "delta": {}, "finish_reason": None}],
-        }
-        yield f"data: {json.dumps(start)}\n\n"
+def event_stream(prompt: str, client: OllamaClient, model_id: str):
 
-        # leichtes Streaming über /api/generate mit stream=true
-        # wir nutzen hier eine minimale Inline-Variante
-        from httpx import Client
-        options = {"temperature": settings.TEMPERATURE, "num_ctx": settings.NUM_CTX}
-        if settings.MAX_TOKENS:
-            options["num_predict"] = settings.MAX_TOKENS
+    # OpenAI-kompatibler Start-Chunk
+    start = {
+        "id": f"chatcmpl-{uuid.uuid4()}",
+        "object": "chat.completion.chunk",
+        "created": int(time.time()),
+        "model": model_id,
+        "choices": [{"index": 0, "delta": {}, "finish_reason": None}],
+    }
+    yield f"data: {json.dumps(start)}\n\n"
+
+    options = {"temperature": settings.TEMPERATURE, "num_ctx": settings.NUM_CTX}
+    if settings.MAX_TOKENS:
+        options["num_predict"] = settings.MAX_TOKENS
+
+    try:
+        # Strom von Ollama holen
         with Client(base_url=client.base_url, timeout=None) as s:
-            payload = {"model": settings.MODEL_NAME, "prompt": prompt, "stream": True, "options": options}
+            payload = {"model": model_id, "prompt": prompt, "stream": True, "options": options}
             with s.stream("POST", "/api/generate", json=payload) as r:
                 r.raise_for_status()
-                for line in r.iter_lines():
+                # Wichtig: Unicode dekodieren, leere Zeilen überspringen
+                for line in r.iter_lines(decode_unicode=True):
                     if not line:
                         continue
                     try:
                         obj = json.loads(line)
                     except Exception:
+                        # falls mal Non-JSON kommt, ignoriere
                         continue
                     if obj.get("done"):
                         break
@@ -106,19 +111,29 @@ def chat_completions(payload: dict = Body(...), authorization: str | None = Head
                         "id": start["id"],
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
-                        "model": settings.MODEL_NAME,
+                        "model": model_id,
                         "choices": [{"index": 0, "delta": {"content": piece}, "finish_reason": None}],
                     }
                     yield f"data: {json.dumps(chunk)}\n\n"
 
-        end = {
+    except Exception as e:
+        # Fehler chunken, statt Verbindung hart zu kappen
+        err = {
             "id": start["id"],
             "object": "chat.completion.chunk",
             "created": int(time.time()),
-            "model": settings.MODEL_NAME,
-            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            "model": model_id,
+            "choices": [{"index": 0, "delta": {"content": f"\n\n[Fehler: {type(e).__name__}]"}, "finish_reason": None}],
         }
-        yield f"data: {json.dumps(end)}\n\n"
-        yield "data: [DONE]\n\n"
+        yield f"data: {json.dumps(err)}\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    # Sauber beenden
+    end = {
+        "id": start["id"],
+        "object": "chat.completion.chunk",
+        "created": int(time.time()),
+        "model": model_id,
+        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+    }
+    yield f"data: {json.dumps(end)}\n\n"
+    yield "data: [DONE]\n\n"
