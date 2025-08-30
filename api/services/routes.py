@@ -9,6 +9,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+def _current_model() -> str:
+    return getattr(settings, "MODEL", None) or getattr(settings, "MODEL_NAME", "unknown-model")
+
 @router.get("/healthz")
 def healthz():
     try:
@@ -19,12 +22,11 @@ def healthz():
 
 @router.get("/v1/models")
 def list_models():
-    # Modell-Feld robust auswählen
-    model_id = getattr(settings, "MODEL", None) or getattr(settings, "MODEL_NAME", "unknown-model")
+    m = _current_model()
     return {
         "object": "list",
         "data": [{
-            "id": model_id,
+            "id": m,
             "object": "model",
             "created": int(time.time()),
             "owned_by": "local",
@@ -46,12 +48,9 @@ def chat_completions(
     if not authorization or authorization.split()[-1] != settings.AUTH_TOKEN:
         raise HTTPException(status_code=401, detail="invalid API key")
 
-    # OpenAI-kompatible Felder
     messages = payload.get("messages", [])
-    # Sichere Stream-Erkennung (nur True akzeptieren)
     stream_flag = payload.get("stream", False) is True
 
-    # Letzte User-Nachricht
     user_msg = ""
     for m in reversed(messages):
         if m.get("role") == "user":
@@ -60,21 +59,20 @@ def chat_completions(
     if not user_msg:
         raise HTTPException(status_code=400, detail="no user message found")
 
-    model_id = getattr(settings, "MODEL", None) or getattr(settings, "MODEL_NAME", "unknown-model")
     prompt = _build_prompt(user_msg)
     client = OllamaClient()
-
+    model_name = _current_model()
     t0 = time.time()
 
     if not stream_flag:
-        logger.info("Non-stream chat start model=%s prompt_len=%d", model_id, len(prompt))
-        text = client.generate(prompt, model_id=model_id).strip()
+        logger.info("Non-stream chat start model=%s prompt_len=%d", model_name, len(prompt))
+        text = client.generate(prompt).strip()
         latency = round(time.time() - t0, 3)
         return {
             "id": f"chatcmpl-{uuid.uuid4()}",
             "object": "chat.completion",
             "created": int(time.time()),
-            "model": model_id,
+            "model": model_name,
             "choices": [{
                 "index": 0,
                 "message": {"role": "assistant", "content": text},
@@ -84,9 +82,9 @@ def chat_completions(
             "latency_sec": latency
         }
 
-    logger.info("Stream chat start model=%s prompt_len=%d", model_id, len(prompt))
+    logger.info("Stream chat start model=%s prompt_len=%d", model_name, len(prompt))
     return StreamingResponse(
-        event_stream(prompt, client, model_id),
+        event_stream(prompt, client, model_name),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -95,19 +93,18 @@ def chat_completions(
         },
     )
 
-def event_stream(prompt: str, client: OllamaClient, model_id: str):
+def event_stream(prompt: str, client: OllamaClient, model_name: str):
     start_id = f"chatcmpl-{uuid.uuid4()}"
     start = {
         "id": start_id,
         "object": "chat.completion.chunk",
         "created": int(time.time()),
-        "model": model_id,
+        "model": model_name,
         "choices": [{"index": 0, "delta": {}, "finish_reason": None}],
     }
     yield f"data: {json.dumps(start)}\n\n"
 
     options = {}
-    # Optional: temperature / num_predict nur setzen wenn vorhanden
     if hasattr(settings, "TEMPERATURE"):
         options["temperature"] = settings.TEMPERATURE
     if hasattr(settings, "NUM_CTX"):
@@ -117,7 +114,7 @@ def event_stream(prompt: str, client: OllamaClient, model_id: str):
 
     base_url = getattr(client, "base_url", "http://ollama:11434")
     payload = {
-        "model": model_id,
+        "model": model_name,
         "prompt": prompt,
         "stream": True,
         "options": options
@@ -143,7 +140,7 @@ def event_stream(prompt: str, client: OllamaClient, model_id: str):
                         "id": start_id,
                         "object": "chat.completion.chunk",
                         "created": int(time.time()),
-                        "model": model_id,
+                        "model": model_name,
                         "choices": [{
                             "index": 0,
                             "delta": {"content": piece},
@@ -156,7 +153,7 @@ def event_stream(prompt: str, client: OllamaClient, model_id: str):
             "id": start_id,
             "object": "chat.completion.chunk",
             "created": int(time.time()),
-            "model": model_id,
+            "model": model_name,
             "choices": [{
                 "index": 0,
                 "delta": {"content": f"\n[Fehler: {type(e).__name__}: {e}]"},
@@ -169,7 +166,7 @@ def event_stream(prompt: str, client: OllamaClient, model_id: str):
         "id": start_id,
         "object": "chat.completion.chunk",
         "created": int(time.time()),
-        "model": model_id,
+        "model": model_name,
         "choices": [{
             "index": 0,
             "delta": {},
