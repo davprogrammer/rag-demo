@@ -4,12 +4,7 @@ from typing import Iterable, List
 from services.ollama_client import OllamaClient
 from services.qdrant_client import QdrantStore
 from bs4 import BeautifulSoup  
-
-# Konfiguration
-MAX_TOKENS_PER_CHUNK = 350          
-OVERLAP_TOKENS = 40
-MIN_CHUNK_CHARS = 40
-EMBED_DIM_ENV = "EMBED_DIM"
+from services.config import Settings
 
 def sha16(string: str) -> str:
     return hashlib.sha1(string.encode("utf-8")).hexdigest()[:16]
@@ -23,7 +18,7 @@ def read_html_text(path: Path) -> str:
     raw = path.read_text(encoding="utf-8", errors="ignore")
     soup = BeautifulSoup(raw, "html.parser")
 
-    # Optional: Skripte/Styles entfernen
+    # Skripte/Styles entfernen
     for tag in soup(["script", "style", "noscript"]):
         tag.decompose()
     text = soup.get_text(separator="\n")
@@ -47,7 +42,7 @@ def chunk_text(text: str, max_tokens: int, overlap_tokens: int) -> List[str]:
     while i < n:
         j = min(n, i + max_chars)
         chunk = text[i:j].strip()
-        if chunk and len(chunk) >= MIN_CHUNK_CHARS:
+        if chunk and len(chunk) >= Settings.MIN_CHUNK_CHARS:
             out.append(chunk)
         if j == n:
             break
@@ -58,33 +53,14 @@ def chunk_text(text: str, max_tokens: int, overlap_tokens: int) -> List[str]:
             i = i_next
     return out
 
-def determine_dim(ollama: OllamaClient) -> int:
-    env_val = os.getenv(EMBED_DIM_ENV)
-    if env_val and env_val.isdigit():
-        return int(env_val)
-    # Probe (einmalig)
-    return len(ollama.embed("probe"))
-
 def ingest(folder: str):
     root = Path(folder)
     assert root.exists(), f"Pfad nicht gefunden: {folder}"
 
     ollama = OllamaClient()
-    dim = determine_dim(ollama)
+    dim = Settings.EMBED_DIM
     store = QdrantStore()
-
-    # Collection sicherstellen / migrieren (existierende Methode verwenden)
-    if hasattr(store, "ensure_or_migrate"):
-        used = store.ensure_or_migrate(vector_size=dim)
-    elif hasattr(store, "ensure_collection"):
-        created = store.ensure_collection(vector_size=dim)
-        used = store.collection
-        if created:
-            print(f"[ingest] Collection '{used}' neu angelegt.")
-    else:
-        used = store.collection
-        print("[warn] Keine ensure_* Methode gefunden – setze vorhandene Collection voraus.")
-
+    used = store.ensure_or_migrate(dim)
     print(f"[ingest] benutze Collection: {used} (dim={dim})")
 
     html_files = list(iter_html_files(root))
@@ -98,7 +74,7 @@ def ingest(folder: str):
         if not text:
             print(f"[warn] leer/ungültig: {f.name}")
             continue
-        chunks = chunk_text(text, MAX_TOKENS_PER_CHUNK, OVERLAP_TOKENS)
+        chunks = chunk_text(text, Settings.MAX_TOKENS_PER_CHUNK, Settings.OVERLAP_TOKENS)
         if not chunks:
             print(f"[warn] keine Chunks erzeugt: {f.name}")
             continue
