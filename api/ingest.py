@@ -4,7 +4,7 @@ from typing import Iterable, List
 from services.ollama_client import OllamaClient
 from services.qdrant_client import QdrantStore
 from bs4 import BeautifulSoup  
-from services.config import Settings
+from services.config import settings
 
 def sha16(string: str) -> str:
     return hashlib.sha1(string.encode("utf-8")).hexdigest()[:16]
@@ -42,7 +42,7 @@ def chunk_text(text: str, max_tokens: int, overlap_tokens: int) -> List[str]:
     while i < n:
         j = min(n, i + max_chars)
         chunk = text[i:j].strip()
-        if chunk and len(chunk) >= Settings.MIN_CHUNK_CHARS:
+        if chunk and len(chunk) >= settings.MIN_CHUNK_CHARS:
             out.append(chunk)
         if j == n:
             break
@@ -74,7 +74,7 @@ def ingest(folder: str):
         if not text:
             print(f"[warn] leer/ungültig: {f.name}")
             continue
-        chunks = chunk_text(text, Settings.MAX_TOKENS_PER_CHUNK, Settings.OVERLAP_TOKENS)
+        chunks = chunk_text(text, settings.MAX_TOKENS_PER_CHUNK, settings.OVERLAP_TOKENS)
         if not chunks:
             print(f"[warn] keine Chunks erzeugt: {f.name}")
             continue
