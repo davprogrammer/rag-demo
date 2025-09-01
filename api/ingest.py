@@ -31,9 +31,6 @@ def read_html_text(path: Path) -> str:
 def chunk_text(text: str, max_tokens: int, overlap_tokens: int) -> List[str]:
     if not text:
         return []
-    # Guards
-    if overlap_tokens >= max_tokens:
-        overlap_tokens = max_tokens // 4
     max_chars = max_tokens * 4
     overlap_chars = overlap_tokens * 4
     out: List[str] = []
