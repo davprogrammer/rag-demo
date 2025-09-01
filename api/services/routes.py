@@ -5,12 +5,9 @@ from .config import settings
 from .ollama_client import OllamaClient
 from httpx import Client
 
-logger = logging.getLogger(__name__)
-
 router = APIRouter()
 
-def _current_model() -> str:
-    return getattr(settings, "MODEL", None) or getattr(settings, "MODEL_NAME", "unknown-model")
+
 
 @router.get("/healthz")
 def healthz():
@@ -21,12 +18,12 @@ def healthz():
     return {"ollama": ok_ollama}
 
 @router.get("/v1/models")
+#Es ist nur ein Modell aktiv, Endpunkt "faken"
 def list_models():
-    m = _current_model()
     return {
         "object": "list",
         "data": [{
-            "id": m,
+            "id": settings.MODEL_NAME,
             "object": "model",
             "created": int(time.time()),
             "owned_by": "local",
@@ -36,8 +33,8 @@ def list_models():
 def _build_prompt(user_msg: str) -> str:
     return (
         "System: Du bist ein hilfreicher Assistent. Antworte auf Deutsch, "
-        "kurz und präzise. Wenn unklar oder kein Kontext: Sage, dass dir Informationen fehlen.\n\n"
-        f"Frage: {user_msg}\nAntwort:"
+        "kurz und präzise. Wenn unklar oder du kein Kontext hast, sage das ehrlich! \n\n"
+        f"Frage: {user_msg}\n Antwort:"
     )
 
 @router.post("/v1/chat/completions")
@@ -61,11 +58,11 @@ def chat_completions(
 
     prompt = _build_prompt(user_msg)
     client = OllamaClient()
-    model_name = _current_model()
+    model_name = settings.MODEL_NAME
     t0 = time.time()
 
     if not stream_flag:
-        logger.info("Non-stream chat start model=%s prompt_len=%d", model_name, len(prompt))
+
         text = client.generate(prompt).strip()
         latency = round(time.time() - t0, 3)
         return {
@@ -82,7 +79,6 @@ def chat_completions(
             "latency_sec": latency
         }
 
-    logger.info("Stream chat start model=%s prompt_len=%d", model_name, len(prompt))
     return StreamingResponse(
         event_stream(prompt, client, model_name),
         media_type="text/event-stream",
@@ -104,15 +100,9 @@ def event_stream(prompt: str, client: OllamaClient, model_name: str):
     }
     yield f"data: {json.dumps(start)}\n\n"
 
-    options = {}
-    if hasattr(settings, "TEMPERATURE"):
-        options["temperature"] = settings.TEMPERATURE
-    if hasattr(settings, "NUM_CTX"):
-        options["num_ctx"] = settings.NUM_CTX
-    if getattr(settings, "MAX_TOKENS", None):
-        options["num_predict"] = settings.MAX_TOKENS
+    options = {"temperature": settings.TEMPERATURE, "num_ctx": settings.NUM_CTX, "num_predict": settings.MAX_TOKENS}
 
-    base_url = getattr(client, "base_url", "http://ollama:11434")
+    base_url = settings.OLLAMA_URL
     payload = {
         "model": model_name,
         "prompt": prompt,

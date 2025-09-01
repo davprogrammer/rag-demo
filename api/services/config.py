@@ -12,6 +12,7 @@ class Settings(BaseModel):
     RAG_MAX_CTX_TOKENS: int = int(os.getenv("RAG_MAX_CTX_TOKENS", "1500"))
     NUM_CTX: int = int(os.getenv("NUM_CTX", "3072"))
     TEMPERATURE: float = float(os.getenv("TEMPERATURE", "0.2"))
+    MAX_TOKENS: int = int(os.getenv("MAX_TOKENS", "160"))
 
     OLLAMA_URL: str = os.getenv("OLLAMA_URL", "http://ollama:11434")
     QDRANT_URL: str = os.getenv("QDRANT_URL", "http://qdrant:6333")
