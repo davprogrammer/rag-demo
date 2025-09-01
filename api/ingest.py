@@ -1,4 +1,4 @@
-import os, sys, hashlib
+import os, sys, hashlib, uuid
 from pathlib import Path
 from typing import Iterable, List
 from services.ollama_client import OllamaClient
@@ -117,7 +117,8 @@ def ingest(folder: str):
             "section": f"{i+1}/{len(chunks)}"
         } for i, c in enumerate(chunks)]
 
-        ids = [f"{sha16(f.name)}-{sha16(c)}" for c in chunks]
+        base_ns = uuid.NAMESPACE_URL
+        ids = [str(uuid.uuid5(base_ns, f"{f.name}:{sha16(c)}")) for c in chunks]
 
         try:
             store.upsert(embeddings, payloads, ids)
