@@ -7,8 +7,6 @@ from httpx import Client
 
 router = APIRouter()
 
-
-
 @router.get("/healthz")
 def healthz():
     try:
