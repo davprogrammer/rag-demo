@@ -58,7 +58,7 @@ def ingest(folder: str):
     assert root.exists(), f"Pfad nicht gefunden: {folder}"
 
     ollama = OllamaClient()
-    dim = Settings.EMBED_DIM
+    dim = settings.EMBED_DIM
     store = QdrantStore()
     used = store.ensure_or_migrate(dim)
     print(f"[ingest] benutze Collection: {used} (dim={dim})")
