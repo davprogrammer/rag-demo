@@ -40,24 +40,14 @@ class OllamaClient:
                 available = [m.get("name") for m in tags.get("models", [])]
             except Exception:
                 available = []
-            # Versuche einfachen Namen ohne Suffix zu matchen
-            simple = model_name.split(":")[0]
-            simple_matches = [a for a in available if a.startswith(simple)]
-            hint = f" Did you mean one of: {simple_matches}" if simple_matches else ""
             raise RuntimeError(
-                f"Model '{model_name}' not found. Available models: {available}.{hint}"
+                f"Model '{model_name}' not found. Available models: {available}."
             )
 
         r.raise_for_status()
         data = r.json()
+        return data["response"]
 
-        # /api/generate liefert {"response": "..."}
-        if isinstance(data, dict) and "response" in data:
-            return data["response"]
-
-        # Fallback: falls Format anders ist
-        msg = data.get("message", {})
-        return msg.get("content", "")
 
 
 
