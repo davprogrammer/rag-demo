@@ -5,6 +5,7 @@ from .config import settings
 from .ollama_client import OllamaClient
 from .qdrant_client import QdrantClient
 from httpx import Client
+from typing import List
 from . import retrieval
 router = APIRouter()
 
