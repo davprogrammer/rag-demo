@@ -5,7 +5,7 @@ from .qdrant_client import QdrantStore
 from .config import settings
 
 # Default-Werte, falls nicht in .env/config gesetzt
-_DEF_TOPK = getattr(settings, "RAG_RETURN", 5)
+_DEF_TOPK = getattr(settings, "RAG_RETURN", 3)
 _DEF_MAX_CTX_CHARS = int(getattr(settings, "RAG_MAX_CTX_CHARS", 1800))
 
 def _build_context(hits: List[Dict[str, Any]], max_chars: int = _DEF_MAX_CTX_CHARS) -> str:
