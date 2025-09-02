@@ -21,7 +21,7 @@ def list_models():
     return {
         "object": "list",
         "data": [{
-            "id": settings.MODEL_NAME,
+            "id": settings.MODEL,
             "object": "model",
             "created": int(time.time()),
             "owned_by": "local",
@@ -56,7 +56,7 @@ def chat_completions(
 
     prompt = _build_prompt(user_msg)
     client = OllamaClient()
-    model_name = settings.MODEL_NAME
+    model_name = settings.MODEL
     t0 = time.time()
 
     if not stream_flag:
