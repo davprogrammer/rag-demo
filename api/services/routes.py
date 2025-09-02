@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse
 from .config import settings
 from .ollama_client import OllamaClient
 from httpx import Client
-
+from . import retrieval
 router = APIRouter()
 
 @router.get("/healthz")
@@ -33,6 +33,12 @@ def _build_prompt(user_msg: str) -> str:
         "System: Du bist ein hilfreicher Assistent. Antworte auf Deutsch, "
         "kurz und präzise. Wenn unklar oder du kein Kontext hast, sage das ehrlich! \n\n"
         f"Frage: {user_msg}\n Antwort:"
+    )
+def _build_rag_prompt(question: str, context: str) -> str:
+    return (
+        "System: Du bist ein hilfreicher Assistent. Antworte auf Deutsch NUR mit Hilfe des bereitgestellten Kontextes. "
+        "Wenn die Information nicht klar im Kontext steht, antworte exakt: 'Keine ausreichenden Informationen.'\n\n"
+        f"Kontext:\n{context}\n\nFrage: {question}\nAntwort:"
     )
 
 @router.post("/v1/chat/completions")
@@ -163,3 +169,78 @@ def event_stream(prompt: str, client: OllamaClient, model_name: str):
     }
     yield f"data: {json.dumps(end)}\n\n"
     yield "data: [DONE]\n\n"
+@router.post("/v1/rag")
+def rag_answer(
+    payload: dict = Body(...),
+    authorization: str | None = Header(None)
+):
+    if not authorization or authorization.split()[-1] != settings.AUTH_TOKEN:
+        raise HTTPException(status_code=401, detail="invalid API key")
+
+    question = (payload.get("query") or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="missing 'query'")
+
+    top_k = int(payload.get("top_k", 5))
+    max_ctx_chars = int(payload.get("max_ctx_chars", 4000))
+
+    # Embedding der Frage
+    client = OllamaClient()
+    q_vec = client.embed(question)
+
+    # Similarity Search
+    store = QdrantStore()
+    hits = store.search(q_vec, top_k=top_k)  # raw Qdrant Objekte
+
+    # In handliche Dicts wandeln
+    docs = []
+    for h in hits:
+        payload = h.payload or {}
+        docs.append({
+            "id": h.id,
+            "score": h.score,
+            "text": payload.get("text", ""),
+            "source": payload.get("source"),
+            "section": payload.get("section"),
+        })
+
+    if not docs:
+        return {
+            "query": question,
+            "model": settings.MODEL,
+            "answer": "Keine ausreichenden Informationen.",
+            "chunks": [],
+            "used_chunks": 0
+        }
+
+    # Kontext zusammenbauen (bis max_ctx_chars)
+    parts = []
+    used = 0
+    for d in docs:
+        t = d["text"].strip()
+        if used >= max_ctx_chars:
+            break
+        room = max_ctx_chars - used
+        if len(t) > room:
+            t = t[:room] + "..."
+        parts.append(f"[{d.get('source')} {d.get('section')}] {t}")
+        used += len(t)
+    context = "\n\n".join(parts)
+
+    prompt = _build_rag_prompt(question, context)
+    answer = client.generate(prompt).strip()
+
+    return {
+        "query": question,
+        "model": settings.MODEL,
+        "answer": answer,
+        "used_chunks": len(parts),
+        "chunks": [
+            {
+                "source": d.get("source"),
+                "section": d.get("section"),
+                "score": d["score"],
+                "preview": (d["text"][:160] + "...") if len(d["text"]) > 160 else d["text"]
+            } for d in docs
+        ]
+    }
