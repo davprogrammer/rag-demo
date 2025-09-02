@@ -22,7 +22,7 @@ class OllamaClient:
 
         options = {"temperature": settings.TEMPERATURE, "num_ctx": settings.NUM_CTX, "num_predict" : settings.MAX_TOKENS}
 
-        model_name = settings.MODEL_NAME
+        model_name = settings.MODEL
 
         payload = {
             "model": model_name,
