@@ -29,6 +29,11 @@ def read_html_text(path: Path) -> str:
     return cleaned
 
 def chunk_text(text: str, max_tokens: int, overlap_tokens: int) -> List[str]:
+    
+    if max_tokens <= 0:
+        return [text] if text else []
+    if overlap_tokens < 0:
+        overlap_tokens = 0
     if not text:
         return []
     max_chars = max_tokens * 4
