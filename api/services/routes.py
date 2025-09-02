@@ -33,8 +33,7 @@ def list_models():
 
 def _build_prompt(question: str, context: str) -> str:
     return (
-        "System: Du bist ein hilfreicher Assistent. Antworte auf Deutsch NUR mit Hilfe des bereitgestellten Kontextes. "
-        "Wenn die Information nicht klar im Kontext steht, antworte exakt: 'Keine ausreichenden Informationen.'\n\n"
+        "System: Du bist ein hilfreicher Assistent. Antworte auf Deutsch NUR mit Hilfe des bereitgestellten Kontextes."
         f"Kontext:\n{context}\n\nFrage: {question}\nAntwort:"
     )
 
