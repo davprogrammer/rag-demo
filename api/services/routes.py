@@ -3,6 +3,7 @@ from fastapi import APIRouter, Body, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from .config import settings
 from .ollama_client import OllamaClient
+from .qdrant_client import QdrantClient
 from httpx import Client
 from . import retrieval
 router = APIRouter()
