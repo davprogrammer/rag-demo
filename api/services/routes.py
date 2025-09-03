@@ -67,10 +67,21 @@ def chat_completions(
     model_name = settings.MODEL
     t0 = time.time()
 
+    
     if not stream_flag:
         with Timer("[Ollama] Generate") as tgen:
             text = client.generate(prompt).strip()
             latency = round(time.time() - t0, 3)
+
+            # Sammle die Quellinformationen
+            sources = []
+            for hit in hits:
+                sources.append({
+                    "source": hit.get("source"),
+                    "section": hit.get("section", ""),
+                    "score": hit.get("score")
+                })
+            logging.info(f"[Ollama] Antwort in {tgen.ms/1000:.1f} s (non-stream)")
             return {
                 "id": f"chatcmpl-{uuid.uuid4()}",
                 "object": "chat.completion",
@@ -78,13 +89,18 @@ def chat_completions(
                 "model": model_name,
                 "choices": [{
                     "index": 0,
-                    "message": {"role": "assistant", "content": text},
-                    "finish_reason": "stop"
+                    "message": {
+                        "role": "assistant", 
+                        "content": text
+                    },
+                    "finish_reason": "stop",
+                    "context": {
+                        "sources": sources 
+                    }
                 }],
                 "usage": {},
                 "latency_sec": latency
             }
-        logging.info(f"[Ollama] Antwort in {tgen.ms/1000:.1f} s (non-stream)")
 
     return StreamingResponse(
         event_stream(prompt, client, model_name),
@@ -96,16 +112,33 @@ def chat_completions(
         },
     )
 
-def event_stream(prompt: str, client: OllamaClient, model_name: str):
+def event_stream(prompt: str, client: OllamaClient, model_name: str, hits: list):
     total_chars = 0
     with Timer("[Ollama] Stream") as tstream:
         start_id = f"chatcmpl-{uuid.uuid4()}"
+        
+        # Sammle die Quellinformationen in einem strukturierten Format
+        sources = []
+        for hit in hits:
+            sources.append({
+                "source": hit.get("source"),
+                "section": hit.get("section", ""),
+                "score": hit.get("score")
+            })
+
         start = {
             "id": start_id,
             "object": "chat.completion.chunk",
             "created": int(time.time()),
             "model": model_name,
-            "choices": [{"index": 0, "delta": {}, "finish_reason": None}],
+            "choices": [{
+                "index": 0,
+                "delta": {},
+                "finish_reason": None,
+                "context": {
+                    "sources": sources  # Füge die Quellen hier hinzu
+                }
+            }],
         }
         yield f"data: {json.dumps(start)}\n\n"
 
