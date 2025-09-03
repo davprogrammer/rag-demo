@@ -81,8 +81,8 @@ def chat_completions(
                     "section": hit.get("section", ""),
                     "score": hit.get("score")
                 })
-            logging.info(f"[Ollama] Antwort in {tgen.ms/1000:.1f} s (non-stream)")
-            return {
+        logging.info(f"[Ollama] Antwort in {tgen.ms/1000:.1f} s (non-stream)")
+        return {
                 "id": f"chatcmpl-{uuid.uuid4()}",
                 "object": "chat.completion",
                 "created": int(time.time()),
