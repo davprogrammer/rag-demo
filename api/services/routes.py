@@ -6,6 +6,7 @@ from .ollama_client import OllamaClient
 from .qdrant_client import QdrantClient
 from httpx import Client
 from .retrieval import retrieve  
+from services.simple_logging import Timer
 
 
 router = APIRouter()
@@ -55,30 +56,35 @@ def chat_completions(
             break
     if not user_msg:
         raise HTTPException(status_code=400, detail="no user message found")
+    
+    with Timer("[RAG] Retrieval") as t:
+        ctx, hits = retrieve(user_msg)
+    logging.info(f"[RAG] Treffer: {len(hits)}, Kontext: {len(ctx)} Zeichen")
 
-    ctx, hits = retrieve(user_msg)
     prompt = _build_prompt(user_msg, ctx)
+    
     client = OllamaClient()
     model_name = settings.MODEL
     t0 = time.time()
 
     if not stream_flag:
-
-        text = client.generate(prompt).strip()
-        latency = round(time.time() - t0, 3)
-        return {
-            "id": f"chatcmpl-{uuid.uuid4()}",
-            "object": "chat.completion",
-            "created": int(time.time()),
-            "model": model_name,
-            "choices": [{
-                "index": 0,
-                "message": {"role": "assistant", "content": text},
-                "finish_reason": "stop"
-            }],
-            "usage": {},
-            "latency_sec": latency
-        }
+        with Timer("[Ollama] Generate") as tgen:
+            text = client.generate(prompt).strip()
+            latency = round(time.time() - t0, 3)
+            return {
+                "id": f"chatcmpl-{uuid.uuid4()}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": model_name,
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": text},
+                    "finish_reason": "stop"
+                }],
+                "usage": {},
+                "latency_sec": latency
+            }
+        logging.info(f"[Ollama] Antwort in {tgen.ms/1000:.1f} s (non-stream)")
 
     return StreamingResponse(
         event_stream(prompt, client, model_name),
@@ -91,78 +97,80 @@ def chat_completions(
     )
 
 def event_stream(prompt: str, client: OllamaClient, model_name: str):
-    start_id = f"chatcmpl-{uuid.uuid4()}"
-    start = {
-        "id": start_id,
-        "object": "chat.completion.chunk",
-        "created": int(time.time()),
-        "model": model_name,
-        "choices": [{"index": 0, "delta": {}, "finish_reason": None}],
-    }
-    yield f"data: {json.dumps(start)}\n\n"
+    with Timer("[Ollama] Stream") as tstream:
+        start_id = f"chatcmpl-{uuid.uuid4()}"
+        start = {
+            "id": start_id,
+            "object": "chat.completion.chunk",
+            "created": int(time.time()),
+            "model": model_name,
+            "choices": [{"index": 0, "delta": {}, "finish_reason": None}],
+        }
+        yield f"data: {json.dumps(start)}\n\n"
 
-    options = {"temperature": settings.TEMPERATURE, "num_ctx": settings.NUM_CTX, "num_predict": settings.MAX_TOKENS}
+        options = {"temperature": settings.TEMPERATURE, "num_ctx": settings.NUM_CTX, "num_predict": settings.MAX_TOKENS}
 
-    base_url = settings.OLLAMA_URL
-    payload = {
-        "model": model_name,
-        "prompt": prompt,
-        "stream": True,
-        "options": options
-    }
+        base_url = settings.OLLAMA_URL
+        payload = {
+            "model": model_name,
+            "prompt": prompt,
+            "stream": True,
+            "options": options
+        }
 
-    try:
-        with Client(base_url=base_url, timeout=None) as s:
-            with s.stream("POST", "/api/generate", json=payload) as r:
-                r.raise_for_status()
-                for line in r.iter_lines():
-                    if not line:
-                        continue
-                    try:
-                        obj = json.loads(line)
-                    except Exception:
-                        continue
-                    if obj.get("done"):
-                        break
-                    piece = obj.get("response", "")
-                    if not piece:
-                        continue
-                    chunk = {
-                        "id": start_id,
-                        "object": "chat.completion.chunk",
-                        "created": int(time.time()),
-                        "model": model_name,
-                        "choices": [{
-                            "index": 0,
-                            "delta": {"content": piece},
-                            "finish_reason": None
-                        }],
-                    }
-                    yield f"data: {json.dumps(chunk)}\n\n"
-    except Exception as e:
-        err = {
+        try:
+            with Client(base_url=base_url, timeout=None) as s:
+                with s.stream("POST", "/api/generate", json=payload) as r:
+                    r.raise_for_status()
+                    for line in r.iter_lines():
+                        if not line:
+                            continue
+                        try:
+                            obj = json.loads(line)
+                        except Exception:
+                            continue
+                        if obj.get("done"):
+                            break
+                        piece = obj.get("response", "")
+                        if not piece:
+                            continue
+                        chunk = {
+                            "id": start_id,
+                            "object": "chat.completion.chunk",
+                            "created": int(time.time()),
+                            "model": model_name,
+                            "choices": [{
+                                "index": 0,
+                                "delta": {"content": piece},
+                                "finish_reason": None
+                            }],
+                        }
+                        yield f"data: {json.dumps(chunk)}\n\n"
+        except Exception as e:
+            err = {
+                "id": start_id,
+                "object": "chat.completion.chunk",
+                "created": int(time.time()),
+                "model": model_name,
+                "choices": [{
+                    "index": 0,
+                    "delta": {"content": f"\n[Fehler: {type(e).__name__}: {e}]"},
+                    "finish_reason": None
+                }],
+            }
+            yield f"data: {json.dumps(err)}\n\n"
+
+        end = {
             "id": start_id,
             "object": "chat.completion.chunk",
             "created": int(time.time()),
             "model": model_name,
             "choices": [{
                 "index": 0,
-                "delta": {"content": f"\n[Fehler: {type(e).__name__}: {e}]"},
-                "finish_reason": None
+                "delta": {},
+                "finish_reason": "stop"
             }],
         }
-        yield f"data: {json.dumps(err)}\n\n"
-
-    end = {
-        "id": start_id,
-        "object": "chat.completion.chunk",
-        "created": int(time.time()),
-        "model": model_name,
-        "choices": [{
-            "index": 0,
-            "delta": {},
-            "finish_reason": "stop"
-        }],
-    }
-    yield f"data: {json.dumps(end)}\n\n"
-    yield "data: [DONE]\n\n"
+        yield f"data: {json.dumps(end)}\n\n"
+        yield "data: [DONE]\n\n"
+    logging.info(f"[Ollama] Antwort in {tstream.ms/1000:.1f} s (stream, {total_chars} Zeichen)")
