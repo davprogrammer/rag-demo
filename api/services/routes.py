@@ -6,7 +6,7 @@ from .ollama_client import OllamaClient
 from .qdrant_client import QdrantClient
 from httpx import Client
 from .retrieval import retrieve  
-from services.simple_logging import Timer
+from services.logging import Timer
 
 
 router = APIRouter()
