@@ -97,6 +97,7 @@ def chat_completions(
     )
 
 def event_stream(prompt: str, client: OllamaClient, model_name: str):
+    total_chars = 0
     with Timer("[Ollama] Stream") as tstream:
         start_id = f"chatcmpl-{uuid.uuid4()}"
         start = {
@@ -145,6 +146,7 @@ def event_stream(prompt: str, client: OllamaClient, model_name: str):
                                 "finish_reason": None
                             }],
                         }
+                        total_chars += len(piece)
                         yield f"data: {json.dumps(chunk)}\n\n"
         except Exception as e:
             err = {
