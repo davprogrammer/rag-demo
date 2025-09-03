@@ -103,7 +103,7 @@ def chat_completions(
             }
 
     return StreamingResponse(
-        event_stream(prompt, client, model_name),
+        event_stream(prompt, client, model_name,hits),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
