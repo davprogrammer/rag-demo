@@ -59,7 +59,7 @@ def chat_completions(
     
     with Timer("[RAG] Retrieval") as t:
         ctx, hits = retrieve(user_msg)
-    logging.info(f"[RAG] Treffer: {len(hits)}, Kontext: {len(ctx)} Zeichen")
+    logging.info(f"[RAG] Antwort in {t.ms/1000:.1f} s, Treffer: {len(hits)}, Kontext: {len(ctx)} Zeichen")
 
     prompt = _build_prompt(user_msg, ctx)
     

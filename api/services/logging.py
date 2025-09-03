@@ -13,7 +13,7 @@ def setup_logging(level: str = "INFO"):
 def set_level(level: str):
     logging.getLogger().setLevel(level.upper())
 
-class Timer():
+class Timer:
     """Stopwatch fürs Kontext-Logging.
        Nutzung: with Timer('[RAG] Retrieval'): ..."""
     def __init__(self, label: str, level: int = logging.INFO):
@@ -28,4 +28,4 @@ class Timer():
 
     def __exit__(self, exc_type, exc, tb):
         self.ms = int((time.time() - self.t0) * 1000)
-        logging.log(self.level, f"{self.label} in {self.ms} ms")
+        
