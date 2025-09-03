@@ -38,6 +38,28 @@ def _build_prompt(question: str, context: str) -> str:
         f"Kontext:\n{context}\n\nFrage: {question}\nAntwort:"
     )
 
+def _format_context_block(hits: list, max_len: int = 1200) -> str:
+    # Baue einen Markdown-Block mit Quellen
+    parts = []
+    total = 0
+    for h in hits:
+        src = h.get("source")
+        sec = h.get("section") or ""
+        score = h.get("score")
+        txt = (h.get("text") or "")[:400].replace("\n", " ").strip()
+        line = f"- {src} {sec} (score={score:.3f}) :: {txt}"
+        if total + len(line) > max_len:
+            break
+        parts.append(line)
+        total += len(line)
+    if not parts:
+        return ""
+    return (
+        "<details><summary>Kontext / Quellen</summary>\n\n"
+        + "\n".join(parts)
+        + "\n\n</details>\n"
+    )
+
 @router.post("/v1/chat/completions")
 def chat_completions(
     payload: dict = Body(...),
@@ -62,48 +84,51 @@ def chat_completions(
     logging.info(f"[RAG] Antwort in {t.ms/1000:.1f} s, Treffer: {len(hits)}, Kontext: {len(ctx)} Zeichen")
 
     prompt = _build_prompt(user_msg, ctx)
-    
     client = OllamaClient()
     model_name = settings.MODEL
     t0 = time.time()
 
-    
+    context_block = _format_context_block(hits)
+
     if not stream_flag:
         with Timer("[Ollama] Generate") as tgen:
-            text = client.generate(prompt).strip()
+            answer = client.generate(prompt).strip()
             latency = round(time.time() - t0, 3)
+            # Kontext VOR die Antwort (damit sofort sichtbar)
+            full_answer = (context_block + "\n" + answer) if context_block else answer
 
-            # Sammle die Quellinformationen
-            sources = []
-            for hit in hits:
-                sources.append({
-                    "source": hit.get("source"),
-                    "section": hit.get("section", ""),
-                    "score": hit.get("score")
-                })
-        logging.info(f"[Ollama] Antwort in {tgen.ms/1000:.1f} s (non-stream)")
+            # Quellenliste weitergeben (falls Debug via Raw JSON)
+            sources = [
+                {
+                    "source": h.get("source"),
+                    "section": h.get("section", ""),
+                    "score": h.get("score")
+                } for h in hits
+            ]
+        logging.info(f"[Ollama] Antwort in {tgen.ms/1000:.3f} s (non-stream)")
         return {
-                "id": f"chatcmpl-{uuid.uuid4()}",
-                "object": "chat.completion",
-                "created": int(time.time()),
-                "model": model_name,
-                "choices": [{
-                    "index": 0,
-                    "message": {
-                        "role": "assistant", 
-                        "content": text
-                    },
-                    "finish_reason": "stop",
-                    "context": {
-                        "sources": sources 
-                    }
-                }],
-                "usage": {},
-                "latency_sec": latency
-            }
+            "id": f"chatcmpl-{uuid.uuid4()}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": model_name,
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": full_answer  # Kontext jetzt sichtbar
+                },
+                "finish_reason": "stop"
+            }],
+            "rag": {
+                "chunks": len(hits),
+                "context_chars": len(ctx),
+                "sources": sources
+            },
+            "latency_sec": latency
+        }
 
     return StreamingResponse(
-        event_stream(prompt, client, model_name,hits),
+        event_stream(prompt, client, model_name, hits, context_block),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -112,38 +137,30 @@ def chat_completions(
         },
     )
 
-def event_stream(prompt: str, client: OllamaClient, model_name: str, hits: list):
+def event_stream(prompt: str, client: OllamaClient, model_name: str, hits: list, context_block: str):
     total_chars = 0
     with Timer("[Ollama] Stream") as tstream:
         start_id = f"chatcmpl-{uuid.uuid4()}"
-        
-        # Sammle die Quellinformationen in einem strukturierten Format
-        sources = []
-        for hit in hits:
-            sources.append({
-                "source": hit.get("source"),
-                "section": hit.get("section", ""),
-                "score": hit.get("score")
-            })
 
-        start = {
-            "id": start_id,
-            "object": "chat.completion.chunk",
-            "created": int(time.time()),
-            "model": model_name,
-            "choices": [{
-                "index": 0,
-                "delta": {},
-                "finish_reason": None,
-                "context": {
-                    "sources": sources  # Füge die Quellen hier hinzu
-                }
-            }],
-        }
-        yield f"data: {json.dumps(start)}\n\n"
+        # Kontext als erstes sichtbares Chunk (delta.content!)
+        if context_block:
+            first = {
+                "id": start_id,
+                "object": "chat.completion.chunk",
+                "created": int(time.time()),
+                "model": model_name,
+                "choices": [{
+                    "index": 0,
+                    "delta": {
+                        "content": context_block
+                    },
+                    "finish_reason": None
+                }],
+            }
+            yield f"data: {json.dumps(first)}\n\n"
 
+        # Danach Streaming der Modellantwort
         options = {"temperature": settings.TEMPERATURE, "num_ctx": settings.NUM_CTX, "num_predict": settings.MAX_TOKENS}
-
         base_url = settings.OLLAMA_URL
         payload = {
             "model": model_name,
@@ -151,7 +168,6 @@ def event_stream(prompt: str, client: OllamaClient, model_name: str, hits: list)
             "stream": True,
             "options": options
         }
-
         try:
             with Client(base_url=base_url, timeout=None) as s:
                 with s.stream("POST", "/api/generate", json=payload) as r:
