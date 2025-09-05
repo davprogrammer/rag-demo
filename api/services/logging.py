@@ -2,7 +2,6 @@
 import logging, sys, time
 
 def setup_logging(level: str = "INFO"):
-    """Einfaches Console-Logging, z. B. [INFO] Nachricht"""
     logger = logging.getLogger()
     logger.setLevel(level.upper())
     handler = logging.StreamHandler(sys.stdout)
@@ -14,8 +13,6 @@ def set_level(level: str):
     logging.getLogger().setLevel(level.upper())
 
 class Timer:
-    """Stopwatch fürs Kontext-Logging.
-       Nutzung: with Timer('[RAG] Retrieval'): ..."""
     def __init__(self, label: str, level: int = logging.INFO):
         self.label = label
         self.level = level

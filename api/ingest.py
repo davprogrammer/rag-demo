@@ -9,7 +9,8 @@ from services.config import settings
 #Verbesserungen
 # - CLI, mehre Datapfade
 # - Tracken der Dateien, automatisch geänderte Dateien ingesten.
-# - Metadaten speichern, für Filterung und Sortierung
+# - Metadaten ingesten, für Filterung und Sortierung
+# - Mehr Datentypen als HTML, Dokumentenstruktur wie Überschriften berücksichtigen, dynamischen Chunking
 
 def sha16(string: str) -> str:
     return hashlib.sha1(string.encode("utf-8")).hexdigest()[:16]
@@ -34,18 +35,10 @@ def read_html_text(path: Path) -> str:
     return cleaned
 
 def chunk_text(text: str) -> List[str]:
-    max_tokens = settings.MAX_TOKENS_PER_CHUNK
-    overlap_tokens = settings.OVERLAP_TOKENS
-    
-    if max_tokens <= 0:
-        return [text] if text else []
-    if overlap_tokens < 0:
-        overlap_tokens = 0
-    if not text:
-        return []
-    max_chars = max_tokens * 4
-    overlap_chars = overlap_tokens * 4
+    max_chars = settings.MAX_TOKENS_PER_CHUNK * 4
+    overlap_chars = settings.OVERLAP_TOKENS * 4
     out: List[str] = []
+
     i = 0
     n = len(text)
     while i < n:
@@ -65,11 +58,11 @@ def chunk_text(text: str) -> List[str]:
 def ingest(folder: str):
     root = Path(folder)
     ollama = OllamaClient()
-    store = QdrantStore()
+    vec_store = QdrantStore()
     dim = settings.EMBED_DIM
 
-    used = store.ensure_or_migrate(dim)
-    print(f"[INGEST] benutze Collection: {used} (dim={dim})")
+    collection = vec_store.check_collection(dim)
+    print(f"[INGEST] benutze Collection: {collection} (dim={dim})")
 
     html_files = list(iterate_html_files(root))
     total_chunks = 0
@@ -101,7 +94,7 @@ def ingest(folder: str):
         ids = [str(uuid.uuid5(base_ns, f"{f.name}:{sha16(c)}")) for c in chunks]
 
         try:
-            store.upsert(embeddings, payloads, ids)
+            vec_store.upsert(embeddings, payloads, ids)
         except Exception as e:
             print(f"[ERROR] Upsert Fehler {f.name}: {e}")
             continue
