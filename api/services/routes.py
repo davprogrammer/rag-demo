@@ -20,7 +20,6 @@ def healthz():
     return {"ollama": ok_ollama}
 
 @router.get("/v1/models")
-#Es ist nur ein Modell aktiv, Endpunkt "faken"
 def list_models():
     return {
         "object": "list",

@@ -1,6 +1,6 @@
 import os
 
-
+#Helpers
 def _get_int(key: str, default: str) -> int:
     v = os.getenv(key, default)
     try:
@@ -28,7 +28,6 @@ class Settings():
     # Retrieval / RAG
     RAG_TOPK: int = _get_int("RAG_TOPK", "12")
     RAG_RETURN: int = _get_int("RAG_RETURN", "5")
-    RAG_MMR_LAMBDA: float = _get_float("RAG_MMR_LAMBDA", "0.5")
     RAG_MAX_CTX_TOKENS: int = _get_int("RAG_MAX_CTX_TOKENS", "1500")
 
     # LLM Optionen
