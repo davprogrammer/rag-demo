@@ -6,10 +6,15 @@ from services.qdrant_client import QdrantStore
 from bs4 import BeautifulSoup  
 from services.config import settings
 
+#Verbesserungen
+# - CLI, mehre Datapfade
+# - Tracken der Dateien, automatisch geänderte Dateien ingesten.
+# - Metadaten speichern, für Filterung und Sortierung
+
 def sha16(string: str) -> str:
     return hashlib.sha1(string.encode("utf-8")).hexdigest()[:16]
 
-def iter_html_files(root: Path) -> Iterable[Path]:
+def iterate_html_files(root: Path) -> Iterable[Path]:
     for p in sorted(root.rglob("*")):
         if p.is_file() and p.suffix.lower() in {".html", ".htm"}:
             yield p
@@ -28,7 +33,9 @@ def read_html_text(path: Path) -> str:
     cleaned = "\n".join([l for l in lines if l])
     return cleaned
 
-def chunk_text(text: str, max_tokens: int, overlap_tokens: int) -> List[str]:
+def chunk_text(text: str) -> List[str]:
+    max_tokens = settings.MAX_TOKENS_PER_CHUNK
+    overlap_tokens = settings.OVERLAP_TOKENS
     
     if max_tokens <= 0:
         return [text] if text else []
@@ -57,28 +64,23 @@ def chunk_text(text: str, max_tokens: int, overlap_tokens: int) -> List[str]:
 
 def ingest(folder: str):
     root = Path(folder)
-    assert root.exists(), f"Pfad nicht gefunden: {folder}"
-
     ollama = OllamaClient()
-    dim = settings.EMBED_DIM
     store = QdrantStore()
+    dim = settings.EMBED_DIM
+
     used = store.ensure_or_migrate(dim)
-    print(f"[ingest] benutze Collection: {used} (dim={dim})")
+    print(f"[INGEST] benutze Collection: {used} (dim={dim})")
 
-    html_files = list(iter_html_files(root))
-    if not html_files:
-        print("[ingest] Keine HTML Dateien gefunden.")
-        return
-
+    html_files = list(iterate_html_files(root))
     total_chunks = 0
     for f in html_files:
         text = read_html_text(f)
         if not text:
-            print(f"[warn] leer/ungültig: {f.name}")
+            print(f"[WARN] leer/ungültig: {f.name}")
             continue
-        chunks = chunk_text(text, settings.MAX_TOKENS_PER_CHUNK, settings.OVERLAP_TOKENS)
+        chunks = chunk_text(text)
         if not chunks:
-            print(f"[warn] keine Chunks erzeugt: {f.name}")
+            print(f"[WARN] keine Chunks erzeugt: {f.name}")
             continue
 
         embeddings = []
@@ -86,7 +88,7 @@ def ingest(folder: str):
             try:
                 embeddings.append(ollama.embed(c))
             except Exception as e:
-                print(f"[warn] Embedding Fehler {f.name}: {e}")
+                print(f"[WARN] Embedding Fehler {f.name}: {e}")
                 embeddings.append([0.0] * dim)
 
         payloads = [{
@@ -101,14 +103,14 @@ def ingest(folder: str):
         try:
             store.upsert(embeddings, payloads, ids)
         except Exception as e:
-            print(f"[error] Upsert Fehler {f.name}: {e}")
+            print(f"[ERROR] Upsert Fehler {f.name}: {e}")
             continue
 
         total_chunks += len(chunks)
-        print(f"[ingest] {f.name}: {len(chunks)} Chunks upserted")
+        print(f"[INGEST] {f.name}: {len(chunks)} Chunks upserted")
 
-    print(f"[ingest] fertig. total chunks: {total_chunks}")
+    print(f"[INGEST] fertig. total chunks: {total_chunks}")
 
 if __name__ == "__main__":
-    target = sys.argv[1] if len(sys.argv) > 1 else "./data"
+    target = "./data"
     ingest(target)
