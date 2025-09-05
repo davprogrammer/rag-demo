@@ -102,7 +102,7 @@ def ingest(folder: str):
         total_chunks += len(chunks)
         print(f"[INGEST] {f.name}: {len(chunks)} Chunks upserted")
 
-    print(f"[INGEST] fertig. total chunks: {total_chunks}")
+    print(f"[INGEST] Fertig. total Chunks: {total_chunks}")
 
 if __name__ == "__main__":
     target = "./data"

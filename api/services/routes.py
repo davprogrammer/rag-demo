@@ -37,10 +37,8 @@ def _build_prompt(question: str, context: str) -> str:
         f"Kontext:\n{context}\n\nFrage: {question}\nAntwort:"
     )
 
-def _format_context_block(hits: list, max_len: int = 1200, style: str = "bullets") -> str:
-    """
-    style: bullets | details
-    """
+def _format_context_block(hits: list, max_len: int = 1200) -> str:
+    
     parts = []
     total = 0
     for h in hits:
@@ -59,19 +57,10 @@ def _format_context_block(hits: list, max_len: int = 1200, style: str = "bullets
     if not parts:
         return ""
     bullets = "\n".join(parts)
-    if style == "details":
-        return (
-            "<details><summary>Quellen</summary>\n\n"
-            + bullets
-            + "\n\n</details>"
-        )
     return "Quellen:\n" + bullets
 
 @router.post("/v1/chat/completions")
-def chat_completions(
-    payload: dict = Body(...),
-    authorization: str | None = Header(None)
-):
+def chat_completions(payload: dict = Body(...),authorization: str | None = Header(None)):
     if not authorization or authorization.split()[-1] != settings.AUTH_TOKEN:
         raise HTTPException(status_code=401, detail="invalid API key")
 
@@ -85,10 +74,7 @@ def chat_completions(
             break
     if not user_msg:
         raise HTTPException(status_code=400, detail="no user message found")
-    
-    context_position = payload.get("context_position", "after")  # "before" | "after"
-    context_style = payload.get("context_style", "bullets")      # "bullets" | "details"
-
+   
     with Timer("[RAG] Retrieval") as t:
         ctx, hits = retrieve(user_msg)
     logging.info(f"[RAG] Antwort in {t.ms/1000:.1f} s, Treffer: {len(hits)}, Kontext: {len(ctx)} Zeichen")
@@ -98,30 +84,20 @@ def chat_completions(
     model_name = settings.MODEL
     t0 = time.time()
 
-    context_block = _format_context_block(hits, style=context_style)
-
     if not stream_flag:
-        with Timer("[Ollama] Generate") as tgen:
+        with Timer("[OLLAMA] Generate") as tgen:
             answer = client.generate(prompt).strip()
             latency = round(time.time() - t0, 3)
-        logging.info(f"[Ollama] Antwort in {tgen.ms/1000:.3f} s (non-stream)")
-
-        if context_block:
-            if context_position == "before":
-                final_answer = f"{context_block}\n\n{answer}"
-            else:  # after
-                final_answer = f"{answer}\n\n{context_block}"
-        else:
-            final_answer = answer
-
-        sources = [
+            context_block = _format_context_block(hits)
+            answer = f"{answer}\n\n{context_block}"
+            sources = [
             {
                 "source": h.get("source"),
                 "section": h.get("section", ""),
                 "score": h.get("score")
             } for h in hits
         ]
-
+        logging.info(f"[OLLAMA] Antwort in {tgen.ms/1000:.1f} s, non-stream")
         return {
             "id": f"chatcmpl-{uuid.uuid4()}",
             "object": "chat.completion",
@@ -131,7 +107,7 @@ def chat_completions(
                 "index": 0,
                 "message": {
                     "role": "assistant",
-                    "content": final_answer
+                    "content": answer
                 },
                 "finish_reason": "stop"
             }],
@@ -150,7 +126,6 @@ def chat_completions(
             model_name=model_name,
             hits=hits,
             context_block=context_block,
-            context_position=context_position
         ),
         media_type="text/event-stream",
         headers={
@@ -162,29 +137,10 @@ def chat_completions(
 
 def event_stream(prompt: str, client: OllamaClient, model_name: str,
                  hits: list, context_block: str, context_position: str):
-    """
-    Streaming:
-    - context_position == 'before': Kontext als erstes Chunk.
-    - context_position == 'after': Kontext als letztes Chunk nach der Modellantwort.
-    """
     total_chars = 0
     with Timer("[Ollama] Stream") as tstream:
         start_id = f"chatcmpl-{uuid.uuid4()}"
 
-        # Kontext vorab senden falls 'before'
-        if context_block and context_position == "before":
-            first = {
-                "id": start_id,
-                "object": "chat.completion.chunk",
-                "created": int(time.time()),
-                "model": model_name,
-                "choices": [{
-                    "index": 0,
-                    "delta": {"content": context_block + "\n\n"},
-                    "finish_reason": None
-                }],
-            }
-            yield f"data: {json.dumps(first)}\n\n"
 
         # Modell-Streaming
         options = {"temperature": settings.TEMPERATURE, "num_ctx": settings.NUM_CTX, "num_predict": settings.MAX_TOKENS}
@@ -240,9 +196,8 @@ def event_stream(prompt: str, client: OllamaClient, model_name: str,
             }
             yield f"data: {json.dumps(err)}\n\n"
 
-        # Kontext am Ende falls 'after' und kein Fehler
-        if context_block and context_position == "after" and not error_mode:
-            tail = {
+     
+        tail = {
                 "id": start_id,
                 "object": "chat.completion.chunk",
                 "created": int(time.time()),
@@ -253,7 +208,7 @@ def event_stream(prompt: str, client: OllamaClient, model_name: str,
                     "finish_reason": None
                 }],
             }
-            yield f"data: {json.dumps(tail)}\n\n"
+        yield f"data: {json.dumps(tail)}\n\n"
 
         end = {
             "id": start_id,
