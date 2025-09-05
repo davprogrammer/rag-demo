@@ -4,9 +4,9 @@ from .qdrant_client import QdrantStore
 from .config import settings
 
 #Verbesserungen:
-# - MMR
+# - Reranking (CrossEncoder, MMR, etc...)
 # - Saubere Trennung
-# - Sortierung, Filter
+# - Sortierung(Aktualität), Filter (beschränkter Zugriff, Duplikate)
 
 def _build_context(hits: List[Dict[str, Any]], max_chars) -> str:
     
