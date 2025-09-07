@@ -37,7 +37,7 @@ def _build_prompt(question: str, context: str) -> str:
         f"Kontext:\n{context}\n\nFrage: {question}\nAntwort:"
     )
 
-def _format_context_block(hits: list, max_len: int = 1200) -> str:
+def _format_context_block(hits: list) -> str:
     
     parts = []
     total = 0
@@ -76,6 +76,7 @@ def chat_completions(payload: dict = Body(...),authorization: str | None = Heade
     logging.info(f"[RAG] Antwort in {t.ms/1000:.1f} s, Treffer: {len(hits)}, Kontext: {len(ctx)} Zeichen")
 
     prompt = _build_prompt(user_msg, ctx)
+    context_block = _format_context_block(hits)
     client = OllamaClient()
     model_name = settings.MODEL
     t0 = time.time()
@@ -84,7 +85,6 @@ def chat_completions(payload: dict = Body(...),authorization: str | None = Heade
         with Timer("[OLLAMA] Generate") as tgen:
             answer = client.generate(prompt).strip()
             latency = round(time.time() - t0, 3)
-            context_block = _format_context_block(hits)
             answer = f"{answer}\n\n{context_block}"
             sources = [
             {
