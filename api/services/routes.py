@@ -46,6 +46,8 @@ def _format_context_block(hits: list) -> str:
         sec = h.get("section") or ""
         score = h.get("score", 0.0)
         txt = (h.get("text") or "").replace("\n", " ").strip()
+        if len(txt)> 200
+            txt = txt[:200]
         line_core = f"{src} {sec}".strip()
         line = f"- {line_core} (score={score:.2f}) – {txt}"
         parts.append(line)
