@@ -46,12 +46,8 @@ def _format_context_block(hits: list, max_len: int = 1200) -> str:
         sec = h.get("section") or ""
         score = h.get("score", 0.0)
         txt = (h.get("text") or "").replace("\n", " ").strip()
-        if len(txt) > 220:
-            txt = txt[:217] + "..."
         line_core = f"{src} {sec}".strip()
         line = f"- {line_core} (score={score:.2f}) – {txt}"
-        if total + len(line) > max_len:
-            break
         parts.append(line)
         total += len(line)
     if not parts:
