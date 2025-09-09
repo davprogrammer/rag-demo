@@ -61,10 +61,9 @@ def chat_completions(payload: dict = Body(...),authorization: str | None = Heade
     if not authorization or authorization.split()[-1] != settings.AUTH_TOKEN:
         raise HTTPException(status_code=401, detail="invalid API key")
     
-    logging.info(f"[Payload] {payload}")
     messages = payload.get("messages", [])
     user_msg = ""
-
+    logging.info(f"[User] {m.get("role")}")
     for m in reversed(messages):
         if m.get("role") == "user":
             user_msg = m.get("content", "")
