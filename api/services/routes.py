@@ -63,7 +63,9 @@ def chat_completions(payload: dict = Body(...),authorization: str | None = Heade
     
     messages = payload.get("messages", [])
     user_msg = ""
-    logging.info(f"[User] {m.get("role")}")
+    with Timer("") as t:
+        logging.info(f"[User] {m.get("role")}")
+    
     for m in reversed(messages):
         if m.get("role") == "user":
             user_msg = m.get("content", "")
