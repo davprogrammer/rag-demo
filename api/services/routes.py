@@ -63,8 +63,8 @@ def chat_completions(payload: dict = Body(...),authorization: str | None = Heade
     
     messages = payload.get("messages", [])
     user_msg = ""
-   
-    logging.info(f"[User] {m.get("role")}")
+    user = m.get("role")
+    logging.info(f"[User] {user}")
     
     for m in reversed(messages):
         if m.get("role") == "user":
