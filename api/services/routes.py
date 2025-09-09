@@ -63,12 +63,12 @@ def chat_completions(payload: dict = Body(...),authorization: str | None = Heade
     
     messages = payload.get("messages", [])
     user_msg = ""
-    user = m.get("role")
-    logging.info(f"[User] {user}")
     
     for m in reversed(messages):
         if m.get("role") == "user":
             user_msg = m.get("content", "")
+            user = m.get("role")
+            logging.info(f"[User] {user}")
             break
     if not user_msg:
         raise HTTPException(status_code=400, detail="no user message found")
