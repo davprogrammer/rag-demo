@@ -60,11 +60,11 @@ def _format_context_block(hits: list) -> str:
 def chat_completions(payload: dict = Body(...),authorization: str | None = Header(None)):
     if not authorization or authorization.split()[-1] != settings.AUTH_TOKEN:
         raise HTTPException(status_code=401, detail="invalid API key")
-
+    
+    print(payload)
     messages = payload.get("messages", [])
-    stream_flag = payload.get("stream", False) is True
-
     user_msg = ""
+
     for m in reversed(messages):
         if m.get("role") == "user":
             user_msg = m.get("content", "")
