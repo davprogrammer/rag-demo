@@ -3,7 +3,7 @@ from qdrant_client.http import models
 from .config import settings
 
 class QdrantStore:
-    def __init__(self, timeout: float = 30.0):
+    def __init__(self, timeout: float = 60.0):
         self.url = settings.QDRANT_URL
         self.collection = settings.QDRANT_COLLECTION
         self.client = QdrantClient(url=self.url, timeout=timeout)
