@@ -7,8 +7,8 @@ class QdrantStore:
         self.url = settings.QDRANT_URL
         self.collection = settings.QDRANT_COLLECTION
         self.client = QdrantClient(url=self.url, timeout=timeout)
+    
     #Helpers
-
     def _collection_exists(self, name: str) -> bool:
         cols = self.client.get_collections().collections
         return any(c.name == name for c in cols)
