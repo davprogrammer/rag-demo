@@ -65,7 +65,7 @@ def chat_completions(payload: dict = Body(...),authorization: str | None = Heade
         raw_json = json.dumps(payload, ensure_ascii=False)
     except Exception:
         raw_json = str(payload)
-        logging.info("[RAW PAYLOAD] %s", raw_json)
+    logging.info("[RAW PAYLOAD] %s", raw_json)
 
     messages = payload.get("messages", []) 
     user_msg = ""
