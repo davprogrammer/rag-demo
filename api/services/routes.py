@@ -61,7 +61,7 @@ def chat_completions(payload: dict = Body(...),authorization: str | None = Heade
     if not authorization or authorization.split()[-1] != settings.AUTH_TOKEN:
         raise HTTPException(status_code=401, detail="invalid API key")
     
-    print(payload)
+    logging.info("[Payload] {payload}")
     messages = payload.get("messages", [])
     user_msg = ""
 
