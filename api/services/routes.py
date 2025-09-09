@@ -61,17 +61,26 @@ def chat_completions(payload: dict = Body(...),authorization: str | None = Heade
     if not authorization or authorization.split()[-1] != settings.AUTH_TOKEN:
         raise HTTPException(status_code=401, detail="invalid API key")
     
+    # Raw Payload Log (einmal am Anfang)
+    try:
+        raw_json = json.dumps(payload, ensure_ascii=False)
+    except Exception:
+        raw_json = str(payload)
+    MAX_LEN = 2000  # Schutz vor riesigen Logs
+    if len(raw_json) > MAX_LEN:
+        logging.info("[RAW PAYLOAD] %s...", raw_json[:MAX_LEN])
+    else:
+        logging.info("[RAW PAYLOAD] %s", raw_json)
+
     messages = payload.get("messages", [])
     user_name = payload.get("user", "unknown")
     user_msg = ""
-
     if messages:
         last_message = messages[-1]
         user_role = last_message.get("role", "unknown")
         user_msg = last_message.get("content", "")
 
     logging.info(f"[User Name] {user_name} | [Message Role] {user_role} | [Message] {user_msg}")
-
 
     
     for m in reversed(messages):
