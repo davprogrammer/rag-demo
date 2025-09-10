@@ -3,10 +3,6 @@ from .ollama_client import OllamaClient
 from .qdrant_client import QdrantStore
 from .config import settings
 
-#Verbesserungen:
-# - Reranking (CrossEncoder, MMR, etc...), Boost von Aktualität und Rollen
-# - Sortierung(Aktualität), Filter (beschränkter Zugriff, Duplikate)
-
 def _build_context(hits: List[Dict[str, Any]], max_chars) -> str:
     
     context: List[str] = []
